@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Local Environment Variables (Contains sensitive passwords and database credentials)
+.env
+.env.local
+.env.*.local
+
+# Uploaded selfies & temporary assets (preserve placeholder SVG)
+uploads/selfies/*.jpg
+uploads/selfies/*.jpeg
+uploads/selfies/*.png
+uploads/selfies/*.webp
+!uploads/placeholder-selfie.svg
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
