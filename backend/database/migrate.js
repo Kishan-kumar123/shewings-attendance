@@ -1,4 +1,5 @@
 const pool = require('./db');
+const bcrypt = require('bcryptjs');
 
 async function migrateDatabase() {
   console.log('Running database schema verification & migration...');
@@ -38,20 +39,71 @@ async function migrateDatabase() {
       }
     }
 
-    // 3. Ensure office_settings has default values
-    await pool.query(`
-      UPDATE office_settings SET
-        work_start_time = COALESCE(work_start_time, '09:30:00'),
-        work_end_time = COALESCE(work_end_time, '18:30:00'),
-        saturday_end_time = COALESCE(saturday_end_time, '18:00:00'),
-        grace_period_minutes = COALESCE(grace_period_minutes, 15),
-        camp_custom_timings_enabled = COALESCE(camp_custom_timings_enabled, 0),
-        camp_work_start_time = COALESCE(camp_work_start_time, '09:30:00'),
-        camp_grace_period_minutes = COALESCE(camp_grace_period_minutes, 15),
-        camp_work_end_time = COALESCE(camp_work_end_time, '18:30:00'),
-        camp_saturday_end_time = COALESCE(camp_saturday_end_time, '18:00:00')
-      WHERE id = 1
-    `);
+    // 3. Ensure office_settings has a base configuration record
+    const [existingSettings] = await pool.query('SELECT id FROM office_settings LIMIT 1');
+    if (existingSettings.length === 0) {
+      console.log('Seeding initial office settings into empty office_settings table...');
+      await pool.query(`
+        INSERT INTO office_settings (
+          id, organization_name, office_name, office_address,
+          latitude, longitude, allowed_radius_meters,
+          work_start_time, grace_period_minutes, work_end_time, saturday_end_time,
+          camp_custom_timings_enabled, camp_work_start_time, camp_grace_period_minutes,
+          camp_work_end_time, camp_saturday_end_time,
+          min_hours_half_day, min_hours_full_day
+        ) VALUES (
+          1,
+          'SheWings Foundation',
+          'SheWings Foundation',
+          'Sector 62, Noida, Uttar Pradesh, 201309, India',
+          28.53530548,
+          77.34580053,
+          100,
+          '09:30:00',
+          15,
+          '18:30:00',
+          '18:00:00',
+          0,
+          '09:30:00',
+          15,
+          '18:30:00',
+          '18:00:00',
+          4.00,
+          8.00
+        ) ON DUPLICATE KEY UPDATE id = 1;
+      `);
+      console.log('Office settings seeded successfully.');
+    } else {
+      await pool.query(`
+        UPDATE office_settings SET
+          work_start_time = COALESCE(work_start_time, '09:30:00'),
+          work_end_time = COALESCE(work_end_time, '18:30:00'),
+          saturday_end_time = COALESCE(saturday_end_time, '18:00:00'),
+          grace_period_minutes = COALESCE(grace_period_minutes, 15),
+          camp_custom_timings_enabled = COALESCE(camp_custom_timings_enabled, 0),
+          camp_work_start_time = COALESCE(camp_work_start_time, '09:30:00'),
+          camp_grace_period_minutes = COALESCE(camp_grace_period_minutes, 15),
+          camp_work_end_time = COALESCE(camp_work_end_time, '18:30:00'),
+          camp_saturday_end_time = COALESCE(camp_saturday_end_time, '18:00:00')
+        WHERE id = ?
+      `, [existingSettings[0].id]);
+    }
+
+    // Ensure standard departments exist
+    const defaultDepts = [
+      { name: 'Management & Operations', description: 'Executive leadership and strategic operations' },
+      { name: 'Social Welfare & Health', description: 'Field initiatives, menstrual hygiene camps, and community projects' },
+      { name: 'Human Resources', description: 'Talent acquisition, culture, and employee welfare' },
+      { name: 'Finance & Compliance', description: 'Accounts, donor reporting, and regulatory compliance' },
+      { name: 'Communications & Media', description: 'Public relations, digital campaigns, and social media' },
+      { name: 'Tech', description: 'Technology, IT infrastructure, web development, and digital systems' }
+    ];
+    for (const dept of defaultDepts) {
+      await pool.query(
+        'INSERT IGNORE INTO departments (name, description) VALUES (?, ?)',
+        [dept.name, dept.description]
+      );
+    }
 
     // 4. Check and add attendance_mode to attendance table
     const [attModeCols] = await pool.query(
@@ -108,7 +160,23 @@ async function migrateDatabase() {
     `);
     console.log('Table wfh_requests verified / created.');
 
-    const [settings] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    // 7. Ensure default administrator account exists
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@shewings.org').trim().toLowerCase();
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123';
+    const [adminCheck] = await pool.query('SELECT id FROM users WHERE email = ?', [adminEmail]);
+    if (adminCheck.length === 0) {
+      const salt = await bcrypt.genSalt(10);
+      const hash = await bcrypt.hash(adminPassword, salt);
+      await pool.query(
+        'INSERT INTO users (email, password_hash, role, status) VALUES (?, ?, ?, ?)',
+        [adminEmail, hash, 'admin', 'active']
+      );
+      console.log(`Default admin account created: ${adminEmail}`);
+    } else {
+      console.log(`Admin account '${adminEmail}' verified active.`);
+    }
+
+    const [settings] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     console.log('Verified Office Settings:', {
       office_name: settings[0]?.office_name,
       work_start_time: settings[0]?.work_start_time,

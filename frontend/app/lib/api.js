@@ -68,7 +68,28 @@ async function request(endpoint, options = {}) {
   };
 
   try {
-    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    let response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, config);
+    } catch (fetchErr) {
+      // If direct backend URL fetch failed in browser (e.g. localhost vs 127.0.0.1 mismatch), try fallback
+      if (typeof window !== 'undefined' && (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1'))) {
+        const altHost = window.location.hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost';
+        try {
+          response = await fetch(`http://${altHost}:5000/api${endpoint}`, config);
+        } catch {
+          try {
+            // Relative path proxy fallback via Next.js rewrite
+            response = await fetch(`/api${endpoint}`, config);
+          } catch {
+            throw fetchErr;
+          }
+        }
+      } else {
+        throw fetchErr;
+      }
+    }
+
     let data;
     try {
       data = await response.json();
@@ -86,7 +107,18 @@ async function request(endpoint, options = {}) {
         }
       }
 
-      const error = new Error(data.message || `Request failed with status ${response.status}`);
+      let userFriendlyMessage = data.message;
+      if (!userFriendlyMessage) {
+        if (response.status === 500) {
+          userFriendlyMessage = 'Unable to connect to backend server. Please ensure the backend is running on port 5000.';
+        } else if (response.status === 502 || response.status === 503 || response.status === 504) {
+          userFriendlyMessage = 'Backend service is temporarily unavailable. Please verify your backend server.';
+        } else {
+          userFriendlyMessage = `Request failed with status ${response.status}`;
+        }
+      }
+
+      const error = new Error(userFriendlyMessage);
       error.status = response.status;
       error.data = data;
       throw error;
@@ -131,6 +163,20 @@ export async function apiRegister(registrationData) {
 
 export async function apiGetCurrentUser() {
   return request('/auth/me');
+}
+
+export async function apiChangeAdminPassword(passwordData) {
+  return request('/auth/admin/change-password', {
+    method: 'PUT',
+    body: JSON.stringify(passwordData)
+  });
+}
+
+export async function apiChangePassword(passwordData) {
+  return request('/auth/change-password', {
+    method: 'PUT',
+    body: JSON.stringify(passwordData)
+  });
 }
 
 export function apiLogout() {
@@ -239,6 +285,13 @@ export async function apiResetEmployeePassword(id, newPassword) {
 // Departments (Protected)
 export async function apiGetDepartments() {
   return request('/departments');
+}
+
+export async function apiCreateDepartment(departmentData) {
+  return request('/departments', {
+    method: 'POST',
+    body: JSON.stringify(departmentData)
+  });
 }
 
 // Leaves (Protected)

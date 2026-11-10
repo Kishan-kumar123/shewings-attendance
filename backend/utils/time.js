@@ -210,6 +210,46 @@ function getScheduledOfficeHours(date = new Date(), settings = {}) {
 }
 
 /**
+ * Safely parses any date or timestamp representation into a JavaScript Date object,
+ * ensuring naive datetime strings (e.g. "2026-10-26 16:06:54" from MySQL)
+ * are accurately interpreted in 'Asia/Kolkata' (IST, UTC+05:30).
+ *
+ * @param {Date|string|number} dateValue
+ * @returns {Date|null}
+ */
+function parseISTDate(dateValue) {
+  if (!dateValue) return null;
+  if (dateValue instanceof Date) return isNaN(dateValue.getTime()) ? null : dateValue;
+  if (typeof dateValue === 'number') return new Date(dateValue);
+  if (typeof dateValue !== 'string') return null;
+
+  const trimmed = dateValue.trim();
+  if (!trimmed) return null;
+
+  // Already an ISO string with Z or explicit timezone offset (+HH:MM / -HH:MM)
+  if (trimmed.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const d = new Date(trimmed);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Date-only string "YYYY-MM-DD"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const d = new Date(`${trimmed}T00:00:00+05:30`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  // Datetime string without offset like "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DDTHH:mm:ss"
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/.test(trimmed)) {
+    const normalized = trimmed.replace(' ', 'T');
+    const d = new Date(`${normalized}+05:30`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const fallback = new Date(trimmed);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
+/**
  * Calculate actual worked time between recorded check-in and check-out timestamps
  * - Returns 0 if check-out time is missing (does NOT assume worked whole day)
  * - Does NOT automatically deduct lunch breaks
@@ -219,8 +259,11 @@ function getScheduledOfficeHours(date = new Date(), settings = {}) {
  */
 function calculateWorkingMinutes(checkInTime, checkOutTime) {
   if (!checkInTime || !checkOutTime) return 0;
-  const inMs = new Date(checkInTime).getTime();
-  const outMs = new Date(checkOutTime).getTime();
+  const inDate = parseISTDate(checkInTime);
+  const outDate = parseISTDate(checkOutTime);
+  if (!inDate || !outDate) return 0;
+  const inMs = inDate.getTime();
+  const outMs = outDate.getTime();
   if (isNaN(inMs) || isNaN(outMs) || outMs <= inMs) return 0;
   return Math.round((outMs - inMs) / (1000 * 60));
 }
@@ -278,6 +321,7 @@ module.exports = {
   TIMEZONE,
   getKolkataDateString,
   getKolkataTime,
+  parseISTDate,
   getCutoffSeconds,
   isPastAttendanceCutoff,
   determineAttendanceStatus,

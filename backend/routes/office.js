@@ -10,7 +10,7 @@ const { getScheduledOfficeHours } = require('../utils/time');
  */
 router.get('/settings', authenticateToken, async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [rows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Office settings not configured.' });
     }
@@ -84,8 +84,9 @@ router.put('/settings', authenticateToken, requireRole('admin'), async (req, res
     } = req.body;
 
     // Fetch old values for audit log
-    const [oldRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [oldRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     const oldValues = oldRows[0] || null;
+    const targetId = oldValues?.id || 1;
 
     await pool.query(
       `UPDATE office_settings SET
@@ -107,7 +108,7 @@ router.put('/settings', authenticateToken, requireRole('admin'), async (req, res
         min_hours_half_day = COALESCE(?, min_hours_half_day),
         min_hours_full_day = COALESCE(?, min_hours_full_day),
         updated_by = ?
-       WHERE id = 1`,
+       WHERE id = ?`,
       [
         organization_name,
         office_name,
@@ -126,7 +127,8 @@ router.put('/settings', authenticateToken, requireRole('admin'), async (req, res
         camp_saturday_end_time,
         min_hours_half_day,
         min_hours_full_day,
-        req.user.id
+        req.user.id,
+        targetId
       ]
     );
 
@@ -142,7 +144,7 @@ router.put('/settings', authenticateToken, requireRole('admin'), async (req, res
       ]
     );
 
-    const [updatedRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [updatedRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     const updatedSettings = updatedRows[0];
     const todaySchedule = getScheduledOfficeHours(new Date(), updatedSettings);
 

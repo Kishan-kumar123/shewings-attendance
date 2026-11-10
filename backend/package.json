@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "init-db": "node database/init-db.js",
-    "setup-admin": "node database/setup-admin.js"
+    "setup-admin": "node database/setup-admin.js",
+    "test": "node tests/verify-rules.js && node tests/verify-modes.js && node tests/verify-admin-password.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

@@ -7,6 +7,7 @@ const { calculateDistanceMeters } = require('../utils/geo');
 const {
   getKolkataDateString,
   getKolkataTime,
+  parseISTDate,
   isPastAttendanceCutoff,
   determineAttendanceStatus,
   calculateWorkingMinutes,
@@ -35,7 +36,7 @@ router.get('/today', authenticateToken, async (req, res) => {
     );
 
     // Fetch office settings for scheduled hours and camp settings
-    const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     const settings = settingsRows[0] || {};
     const schedule = getScheduledOfficeHours(today, settings);
 
@@ -131,7 +132,7 @@ router.post('/check-in', authenticateToken, uploadSelfie.single('selfie'), async
     }
 
     // Fetch office settings
-    const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     if (settingsRows.length === 0) {
       return res.status(500).json({ success: false, message: 'Office settings not found in database.' });
     }
@@ -360,7 +361,7 @@ router.post('/check-out', authenticateToken, uploadSelfie.single('selfie'), asyn
     let distanceMeters = null;
 
     // Fetch office settings
-    const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     const settings = settingsRows[0] || {};
 
     // For OFFICE mode, geofence check is strictly enforced
@@ -397,7 +398,7 @@ router.post('/check-out', authenticateToken, uploadSelfie.single('selfie'), asyn
     }
 
     // Calculate actual worked time between recorded check-in and check-out
-    const checkInDate = new Date(existing[0].check_in_time);
+    const checkInDate = parseISTDate(existing[0].check_in_time);
     const checkOutDate = new Date();
     const workingMinutes = calculateWorkingMinutes(checkInDate, checkOutDate);
 
@@ -511,7 +512,7 @@ router.get('/all', authenticateToken, requireRole('admin'), async (req, res) => 
     const filterMode = (mode || attendanceMode || 'all').trim().toUpperCase();
 
     // 1. Fetch office settings
-    const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     const settings = settingsRows[0] || {
       work_start_time: '09:30:00',
       grace_period_minutes: 15,
@@ -788,7 +789,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
 
     if (req.user.role === 'admin') {
       // Fetch office settings
-      const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+      const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
       const settings = settingsRows[0] || {
         work_start_time: '09:30:00',
         grace_period_minutes: 15,
@@ -954,7 +955,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
       const totalDays = counts[0]?.totalDays || 0;
       const avgMinutesPerDay = totalDays > 0 ? Math.round(totalMinutes / totalDays) : 0;
 
-      const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+      const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
       const settings = settingsRows[0] || {};
 
       return res.json({
@@ -999,7 +1000,7 @@ router.get('/monthly-report', authenticateToken, requireRole('admin'), async (re
     const targetMonth = req.query.month || todayStr.substring(0, 7); // 'YYYY-MM'
 
     // 1. Fetch office settings
-    const [settingsRows] = await pool.query('SELECT * FROM office_settings WHERE id = 1');
+    const [settingsRows] = await pool.query('SELECT * FROM office_settings ORDER BY id ASC LIMIT 1');
     const settings = settingsRows[0] || {
       work_start_time: '09:30:00',
       grace_period_minutes: 15,

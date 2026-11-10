@@ -247,7 +247,7 @@ export default function CameraCapture({ onCapture, capturedImage, onRetake, onCa
   return (
     <div className="w-full flex flex-col items-center">
       {/* Video / Preview Container */}
-      <div className="relative w-full max-w-md aspect-[4/3] rounded-2xl overflow-hidden bg-slate-950 border-2 border-slate-800 shadow-2xl flex items-center justify-center">
+      <div className="relative w-full max-w-[320px] sm:max-w-[340px] aspect-[4/3] max-h-[200px] sm:max-h-[225px] rounded-xl sm:rounded-2xl overflow-hidden bg-slate-950 border-2 border-slate-800 shadow-2xl flex items-center justify-center">
         {/* Always mounted video element so videoRef is never null */}
         <video
           ref={videoRef}
@@ -267,25 +267,25 @@ export default function CameraCapture({ onCapture, capturedImage, onRetake, onCa
               alt="Captured verification selfie"
               className="w-full h-full object-cover"
             />
-            <div className="absolute top-3 left-3 px-3 py-1.5 rounded-xl bg-emerald-600/90 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg backdrop-blur-sm">
-              <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+            <div className="absolute top-2 left-2 px-2.5 py-1 rounded-lg bg-emerald-600/90 text-white text-[10px] sm:text-[11px] font-semibold flex items-center gap-1.5 shadow-lg backdrop-blur-sm">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
               <span>Selfie Captured & Verified</span>
             </div>
           </div>
         ) : isLoading ? (
           // Connecting spinner
-          <div className="p-6 text-center flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-10 h-10 text-blue-400 animate-spin" />
-            <p className="text-sm font-semibold text-white">Starting Camera...</p>
-            <p className="text-xs text-slate-400">Requesting webcam permissions from browser</p>
+          <div className="p-4 text-center flex flex-col items-center justify-center gap-2">
+            <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+            <p className="text-xs sm:text-sm font-semibold text-white">Starting Camera...</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-400">Requesting webcam permissions from browser</p>
           </div>
         ) : hasCamera && cameraActive ? (
           // Active camera overlay guides
           <>
             {/* Face alignment guideline overlay */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-36 h-48 xs:w-44 xs:h-56 sm:w-48 sm:h-60 rounded-[50%] border-2 border-dashed border-blue-400/70 shadow-[0_0_0_9999px_rgba(11,17,32,0.45)]" />
-              <div className="absolute top-2.5 sm:top-3 text-center px-2.5 sm:px-3.5 py-1 rounded-full bg-slate-900/90 text-blue-300 text-[11px] sm:text-xs font-semibold border border-blue-500/30 backdrop-blur-sm max-w-[90%] truncate">
+              <div className="w-28 h-36 sm:w-32 sm:h-40 rounded-[50%] border-2 border-dashed border-blue-400/70 shadow-[0_0_0_9999px_rgba(11,17,32,0.45)]" />
+              <div className="absolute top-2 sm:top-2.5 text-center px-2.5 sm:px-3 py-0.5 rounded-full bg-slate-900/90 text-blue-300 text-[10px] sm:text-[11px] font-semibold border border-blue-500/30 backdrop-blur-sm max-w-[90%] truncate">
                 Center your face inside the oval
               </div>
             </div>
@@ -295,31 +295,31 @@ export default function CameraCapture({ onCapture, capturedImage, onRetake, onCa
               type="button"
               onClick={toggleFacingMode}
               title="Flip between front and rear cameras"
-              className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 p-2 rounded-xl bg-slate-900/80 hover:bg-blue-600 text-white transition border border-slate-700 shadow-md"
+              className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 p-1.5 rounded-lg sm:rounded-xl bg-slate-900/80 hover:bg-blue-600 text-white transition border border-slate-700 shadow-md cursor-pointer"
               aria-label="Switch camera"
             >
-              <SwitchCamera className="w-4 h-4" />
+              <SwitchCamera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </button>
           </>
         ) : (
           // Camera unavailable fallback view
-          <div className="p-4 sm:p-6 text-center max-w-sm mx-auto">
-            <AlertCircle className="w-10 h-10 sm:w-12 sm:h-12 text-amber-400 mx-auto mb-2.5 sm:mb-3" />
-            <p className="text-xs sm:text-sm font-bold text-white mb-1.5">Camera Not Accessible</p>
-            <p className="text-[11px] sm:text-xs text-slate-400 mb-3.5 sm:mb-4 leading-relaxed">
+          <div className="p-3 sm:p-4 text-center max-w-xs mx-auto">
+            <AlertCircle className="w-8 h-8 text-amber-400 mx-auto mb-1.5" />
+            <p className="text-xs font-bold text-white mb-1">Camera Not Accessible</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 mb-2.5 leading-snug">
               {errorMsg || 'Unable to connect to your webcam. Please allow camera permissions in your browser or select a photo to proceed.'}
             </p>
-            <div className="flex flex-col gap-2 sm:gap-2.5">
+            <div className="flex flex-col gap-2">
               <button
                 type="button"
                 onClick={startCamera}
-                className="w-full py-2.5 px-4 min-h-[42px] rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 transition active:scale-98"
+                className="w-full py-2 px-3 min-h-[36px] rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-md shadow-blue-600/25 transition active:scale-98 cursor-pointer"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3 h-3" />
                 Retry Camera Access
               </button>
-              <label className="w-full py-2.5 px-4 min-h-[42px] rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer transition border border-slate-700 flex items-center justify-center gap-2 active:scale-98">
-                <Upload className="w-3.5 h-3.5 text-blue-400" />
+              <label className="w-full py-2 px-3 min-h-[36px] rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer transition border border-slate-700 flex items-center justify-center gap-1.5 active:scale-98">
+                <Upload className="w-3 h-3 text-blue-400" />
                 Upload Photo File
                 <input
                   type="file"
@@ -338,23 +338,23 @@ export default function CameraCapture({ onCapture, capturedImage, onRetake, onCa
       </div>
 
       {/* Control Action Buttons */}
-      <div className="mt-3.5 sm:mt-4 flex flex-col sm:flex-row items-center gap-2 sm:gap-3 w-full max-w-md">
+      <div className="mt-2.5 sm:mt-3 flex flex-row items-center gap-2 sm:gap-2.5 w-full max-w-[320px] sm:max-w-[340px]">
         {capturedImage ? (
           <>
             <button
               type="button"
               onClick={handleRetake}
-              className="w-full sm:flex-1 py-2.5 px-4 min-h-[42px] rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-semibold text-xs flex items-center justify-center gap-2 transition"
+              className="flex-1 py-2 sm:py-2.5 px-3 min-h-[38px] sm:min-h-[40px] rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
             >
-              <RefreshCw className="w-4 h-4 text-blue-400" />
+              <RefreshCw className="w-3.5 h-3.5 text-blue-400" />
               Retake Selfie
             </button>
             <button
               type="button"
               onClick={handleCancel}
-              className="w-full sm:w-auto py-2.5 px-5 min-h-[42px] rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition"
+              className="py-2 sm:py-2.5 px-4 min-h-[38px] sm:min-h-[40px] rounded-xl border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white font-semibold text-xs flex items-center justify-center gap-1 transition cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
               Cancel
             </button>
           </>
@@ -364,15 +364,15 @@ export default function CameraCapture({ onCapture, capturedImage, onRetake, onCa
               type="button"
               onClick={takePhoto}
               disabled={isCapturing}
-              className="w-full sm:flex-1 py-3 px-4 min-h-[44px] rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 active:scale-[0.99] transition disabled:opacity-50"
+              className="flex-1 py-2 sm:py-2.5 px-3 min-h-[38px] sm:min-h-[40px] rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg shadow-blue-600/30 active:scale-[0.99] transition disabled:opacity-50 cursor-pointer"
             >
-              <Camera className="w-4 h-4" />
+              <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Capture Selfie</span>
             </button>
             <button
               type="button"
               onClick={handleCancel}
-              className="w-full sm:w-auto py-3 px-5 min-h-[44px] rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs transition flex items-center justify-center"
+              className="py-2 sm:py-2.5 px-4 min-h-[38px] sm:min-h-[40px] rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white font-semibold text-xs transition flex items-center justify-center cursor-pointer"
             >
               Cancel
             </button>
@@ -381,7 +381,7 @@ export default function CameraCapture({ onCapture, capturedImage, onRetake, onCa
           <button
             type="button"
             onClick={handleCancel}
-            className="w-full py-2.5 px-4 min-h-[42px] rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-semibold text-xs transition"
+            className="w-full py-2 sm:py-2.5 px-4 min-h-[38px] sm:min-h-[40px] rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-semibold text-xs transition cursor-pointer"
           >
             Cancel
           </button>

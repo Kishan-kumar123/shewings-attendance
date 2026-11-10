@@ -187,3 +187,41 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
   INDEX idx_wfh_status (status),
   INDEX idx_wfh_dates (start_date, end_date)
 ) ENGINE=InnoDB;
+
+-- 10. Initial Seed for Office Settings (Single Record)
+INSERT IGNORE INTO office_settings (
+  id, organization_name, office_name, office_address,
+  latitude, longitude, allowed_radius_meters,
+  work_start_time, grace_period_minutes, work_end_time, saturday_end_time,
+  camp_custom_timings_enabled, camp_work_start_time, camp_grace_period_minutes,
+  camp_work_end_time, camp_saturday_end_time,
+  min_hours_half_day, min_hours_full_day
+) VALUES (
+  1,
+  'SheWings Foundation',
+  'SheWings Foundation',
+  'Sector 62, Noida, Uttar Pradesh, 201309, India',
+  28.53530548,
+  77.34580053,
+  100,
+  '09:30:00',
+  15,
+  '18:30:00',
+  '18:00:00',
+  0,
+  '09:30:00',
+  15,
+  '18:30:00',
+  '18:00:00',
+  4.00,
+  8.00
+);
+
+-- 11. Initial Seed for Foundation Departments
+INSERT IGNORE INTO departments (id, name, description) VALUES
+  (1, 'Management & Operations', 'Executive leadership and strategic operations'),
+  (2, 'Social Welfare & Health', 'Field initiatives, menstrual hygiene camps, and community projects'),
+  (3, 'Human Resources', 'Talent acquisition, culture, and employee welfare'),
+  (4, 'Finance & Compliance', 'Accounts, donor reporting, and regulatory compliance'),
+  (5, 'Communications & Media', 'Public relations, digital campaigns, and social media'),
+  (6, 'Tech', 'Technology, IT infrastructure, web development, and digital systems');

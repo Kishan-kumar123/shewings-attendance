@@ -91,9 +91,21 @@ const generalApiLimiter = rateLimit({
   }
 });
 
+const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30, // 30 attempts per 15 minutes per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many password change attempts from this IP address. Please try again after 15 minutes.'
+  }
+});
+
 // Apply rate limiters
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/admin/change-password', passwordChangeLimiter);
 app.use('/api', generalApiLimiter);
 
 // API Routes
@@ -128,7 +140,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
   try {
     const migrateDatabase = require('./database/migrate');
     await migrateDatabase();

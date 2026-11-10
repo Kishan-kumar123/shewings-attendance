@@ -223,7 +223,7 @@ export default function LoginModal({ onLoginSuccess }) {
                     name="email"
                     autoComplete="username"
                     required
-                    placeholder={roleTab === 'admin' ? 'admin@shewings.org' : 'aarav.mehta@shewings.org'}
+                    placeholder={roleTab === 'admin' ? 'admin@shewings.org' : 'name@shewings.org'}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
@@ -488,14 +488,6 @@ export default function LoginModal({ onLoginSuccess }) {
             <p className="text-[11px] text-slate-500">
               Enterprise MySQL authenticated session • Passwords hashed with bcrypt
             </p>
-            {mode === 'login' && (
-              <div className="inline-flex flex-wrap items-center justify-center gap-1.5 px-3 py-1 rounded-lg bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-400 max-w-full">
-                <span>{roleTab === 'admin' ? 'Admin Account:' : 'Registered Staff:'}</span>
-                <span className="font-mono text-blue-400 font-medium break-all">
-                  {roleTab === 'admin' ? 'admin@shewings.org' : 'aarav.mehta@shewings.org'}
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>

@@ -74,9 +74,11 @@ button, a, input, select, textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Hide scrollbar for clean horizontal tabs on mobile */
+/* Hide scrollbar utility while preserving full scrolling functionality */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+  width: 0px;
+  height: 0px;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
@@ -96,4 +98,791 @@ button, a, input, select, textarea {
 .animate-drawer-in {
   animation: slideInLeft 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* ============================================================
+   LIGHT MODE & DARK MODE THEME SYSTEM - SheWings Foundation
+   Preserves dark mode 100% when <html class="dark">
+   Activates crisp modern light mode when <html class="light">
+   ============================================================ */
+
+:root {
+  color-scheme: light dark;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="dark"]),
+html.dark {
+  color-scheme: dark;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="light"]),
+html.light {
+  color-scheme: light;
+}
+
+/* 1. Global Page Background & Base Text */
+html.light,
+html.light body,
+[data-theme="light"],
+[data-theme="light"] body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-\[\#0b1120\],
+html.light .bg-\[\#0b0f19\],
+[data-theme="light"] .bg-\[\#0b1120\],
+[data-theme="light"] .bg-\[\#0b0f19\] {
+  background-color: #f8fafc !important;
+}
+
+/* 2. Primary Card & Container Backgrounds (Slate 900/950 -> Pure Crisp White #ffffff) */
+html.light .bg-slate-900,
+html.light .bg-slate-950,
+html.light .bg-slate-900\/95,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/80,
+html.light .bg-slate-900\/75,
+html.light .bg-slate-900\/70,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-950\/95,
+html.light .bg-slate-950\/90,
+html.light .bg-slate-950\/80,
+html.light .bg-slate-950\/70,
+html.light .bg-slate-950\/60,
+[data-theme="light"] .bg-slate-900,
+[data-theme="light"] .bg-slate-950,
+[data-theme="light"] .bg-slate-900\/95,
+[data-theme="light"] .bg-slate-900\/90,
+[data-theme="light"] .bg-slate-900\/80,
+[data-theme="light"] .bg-slate-950\/90,
+[data-theme="light"] .bg-slate-950\/80 {
+  background-color: #ffffff !important;
+}
+
+/* Crisp light mode elevation for cards */
+html.light .rounded-2xl.border,
+html.light .rounded-3xl.border,
+html.light .rounded-xl.border {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* 3. Secondary Surfaces, Neutral Tabs, & Inactive Containers (Slate 800 -> Slate 100/50 #f1f5f9) */
+html.light .bg-slate-800,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-800\/60,
+html.light .bg-slate-800\/50,
+html.light .bg-slate-800\/40,
+html.light .bg-slate-800\/30,
+html.light .bg-slate-800\/20,
+[data-theme="light"] .bg-slate-800,
+[data-theme="light"] .bg-slate-800\/80,
+[data-theme="light"] .bg-slate-800\/40 {
+  background-color: #f1f5f9 !important;
+}
+
+/* Hover on neutral elements in light mode */
+html.light .hover\:bg-slate-800:hover,
+html.light .hover\:bg-slate-800\/40:hover,
+html.light .hover\:bg-slate-800\/50:hover,
+html.light .hover\:bg-slate-800\/60:hover,
+html.light .hover\:bg-slate-900:hover,
+[data-theme="light"] .hover\:bg-slate-800:hover,
+[data-theme="light"] .hover\:bg-slate-800\/40:hover {
+  background-color: #e2e8f0 !important;
+}
+
+/* 4. Borders & Dividers (Slate 800/700/600 -> Crisp Slate 200 #e2e8f0) */
+html.light .border-slate-800,
+html.light .border-slate-800\/80,
+html.light .border-slate-800\/60,
+html.light .border-slate-700,
+html.light .border-slate-700\/80,
+html.light .border-slate-700\/60,
+html.light .border-slate-600,
+[data-theme="light"] .border-slate-800,
+[data-theme="light"] .border-slate-800\/80,
+[data-theme="light"] .border-slate-700 {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+html.light .divide-slate-700 > :not([hidden]) ~ :not([hidden]),
+[data-theme="light"] .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+[data-theme="light"] .divide-slate-700 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* 5. Typography & Text Readability */
+/* Primary text (Headings, titles, names, main labels) */
+html.light .text-white,
+html.light .text-slate-100,
+html.light .text-slate-200,
+[data-theme="light"] .text-white,
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-slate-200 {
+  color: #0f172a !important;
+}
+
+/* PRESERVE white text strictly on primary blue/gradient buttons, links, and avatar icons! */
+html.light button.bg-blue-600,
+html.light button.bg-blue-600 > *:not(span[class*="rounded-full"]),
+html.light a.bg-blue-600,
+html.light a.bg-blue-600 *,
+html.light button[class~="bg-blue-600"],
+html.light button[class~="bg-blue-600"] > *:not(span[class*="rounded-full"]),
+html.light a[class~="bg-blue-600"],
+html.light a[class~="bg-blue-600"] *,
+html.light button[class*="from-blue-600"]:not([class*="hover:from-blue-600"]),
+html.light button[class*="from-blue-600"]:not([class*="hover:from-blue-600"]) *,
+html.light button[class*="bg-gradient-"]:not([class*="hover:bg-gradient-"]),
+html.light button[class*="bg-gradient-"]:not([class*="hover:bg-gradient-"]) *,
+html.light a[class*="bg-gradient-"],
+html.light a[class*="bg-gradient-"] *,
+html.light .bg-blue-600:not(button):not(td):not(tr):not(span),
+html.light .bg-blue-500:not(button):not(td):not(tr):not(span),
+html.light .bg-emerald-600:not(button):not(td):not(tr):not(span),
+html.light .bg-rose-600:not(button):not(td):not(tr):not(span),
+html.light [class*="ring-1"][class*="bg-gradient-"] span,
+html.light .text-white-forced,
+html.light .text-white-forced *,
+html.light [class*="bg-gradient-to-tr"][class*="from-blue-600"],
+html.light [class*="bg-gradient-to-tr"][class*="from-blue-600"] *,
+[data-theme="light"] .text-white-forced,
+[data-theme="light"] [class*="bg-gradient-to-tr"][class*="from-blue-600"] *,
+[data-theme="light"] button.bg-blue-600,
+[data-theme="light"] button[class~="bg-blue-600"] {
+  color: #ffffff !important;
+}
+
+/* Ensure hover with colored background turns text/icons white */
+html.light button.hover\:bg-blue-600:hover,
+html.light button.hover\:bg-blue-600:hover *,
+html.light button.hover\:bg-amber-600:hover,
+html.light button.hover\:bg-amber-600:hover *,
+html.light button.hover\:bg-rose-600:hover,
+html.light button.hover\:bg-rose-600:hover *,
+html.light button.hover\:bg-emerald-600:hover,
+html.light button.hover\:bg-emerald-600:hover *,
+[data-theme="light"] button.hover\:bg-blue-600:hover,
+[data-theme="light"] button.hover\:bg-blue-600:hover *,
+[data-theme="light"] button.hover\:bg-amber-600:hover,
+[data-theme="light"] button.hover\:bg-amber-600:hover *,
+[data-theme="light"] button.hover\:bg-rose-600:hover,
+[data-theme="light"] button.hover\:bg-rose-600:hover *,
+[data-theme="light"] button.hover\:bg-emerald-600:hover,
+[data-theme="light"] button.hover\:bg-emerald-600:hover * {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+/* Navigation Tab Count Badges in Light Mode */
+html.light .border-b.border-slate-800 button.bg-blue-600 span.rounded-full,
+html.light button.bg-blue-600 span.rounded-full,
+html.light button[class~="bg-blue-600"] span.rounded-full,
+[data-theme="light"] .border-b.border-slate-800 button.bg-blue-600 span.rounded-full,
+[data-theme="light"] button.bg-blue-600 span.rounded-full,
+[data-theme="light"] button[class~="bg-blue-600"] span.rounded-full {
+  background-color: rgba(255, 255, 255, 0.28) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+html.light .border-b.border-slate-800 button:not(.bg-blue-600) span.rounded-full,
+[data-theme="light"] .border-b.border-slate-800 button:not(.bg-blue-600) span.rounded-full {
+  background-color: #e2e8f0 !important;
+  color: #1e293b !important;
+  border: 1px solid #cbd5e1 !important;
+  font-weight: 700 !important;
+}
+
+/* Table Action Buttons in Light Mode (Employee Directory, Attendance, etc.) */
+html.light td .flex button,
+[data-theme="light"] td .flex button {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+html.light td .flex button svg,
+[data-theme="light"] td .flex button svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+}
+
+/* Edit Staff icon specifically - clearly visible blue pencil */
+html.light td .flex button[title*="Edit"],
+[data-theme="light"] td .flex button[title*="Edit"] {
+  color: #2563eb !important;
+}
+html.light td .flex button[title*="Edit"] svg,
+[data-theme="light"] td .flex button[title*="Edit"] svg {
+  color: #2563eb !important;
+  stroke: #2563eb !important;
+}
+
+/* Reset Password icon specifically */
+html.light td .flex button[title*="Password"],
+[data-theme="light"] td .flex button[title*="Password"] {
+  color: #d97706 !important;
+}
+html.light td .flex button[title*="Password"] svg,
+[data-theme="light"] td .flex button[title*="Password"] svg {
+  color: #d97706 !important;
+  stroke: #d97706 !important;
+}
+
+/* View Details icon specifically */
+html.light td .flex button[title*="View"],
+[data-theme="light"] td .flex button[title*="View"] {
+  color: #475569 !important;
+}
+html.light td .flex button[title*="View"] svg,
+[data-theme="light"] td .flex button[title*="View"] svg {
+  color: #475569 !important;
+  stroke: #475569 !important;
+}
+
+/* Deactivate button icon */
+html.light td .flex button[title*="Deactivate"],
+[data-theme="light"] td .flex button[title*="Deactivate"] {
+  color: #e11d48 !important;
+}
+html.light td .flex button[title*="Deactivate"] svg,
+[data-theme="light"] td .flex button[title*="Deactivate"] svg {
+  color: #e11d48 !important;
+  stroke: #e11d48 !important;
+}
+
+/* Activate button icon */
+html.light td .flex button[title*="Activate Account"],
+[data-theme="light"] td .flex button[title*="Activate Account"] {
+  color: #059669 !important;
+}
+html.light td .flex button[title*="Activate Account"] svg,
+[data-theme="light"] td .flex button[title*="Activate Account"] svg {
+  color: #059669 !important;
+  stroke: #059669 !important;
+}
+
+/* Hover state on table action buttons */
+html.light td .flex button:hover,
+html.light td .flex button:hover svg,
+[data-theme="light"] td .flex button:hover,
+[data-theme="light"] td .flex button:hover svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+html.light td .flex button.hover\:bg-blue-600:hover,
+html.light td .flex button[title*="Edit"]:hover,
+[data-theme="light"] td .flex button.hover\:bg-blue-600:hover,
+[data-theme="light"] td .flex button[title*="Edit"]:hover {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+}
+
+html.light td .flex button.hover\:bg-amber-600:hover,
+html.light td .flex button[title*="Password"]:hover,
+[data-theme="light"] td .flex button.hover\:bg-amber-600:hover,
+[data-theme="light"] td .flex button[title*="Password"]:hover {
+  background-color: #d97706 !important;
+  border-color: #d97706 !important;
+}
+
+html.light td .flex button.hover\:bg-rose-600:hover,
+html.light td .flex button[title*="Deactivate"]:hover,
+[data-theme="light"] td .flex button.hover\:bg-rose-600:hover,
+[data-theme="light"] td .flex button[title*="Deactivate"]:hover {
+  background-color: #e11d48 !important;
+  border-color: #e11d48 !important;
+}
+
+html.light td .flex button.hover\:bg-emerald-600:hover,
+html.light td .flex button[title*="Activate Account"]:hover,
+[data-theme="light"] td .flex button.hover\:bg-emerald-600:hover,
+[data-theme="light"] td .flex button[title*="Activate Account"]:hover {
+  background-color: #059669 !important;
+  border-color: #059669 !important;
+}
+
+html.light td .flex button.hover\:bg-slate-700:hover,
+html.light td .flex button[title*="View"]:hover,
+[data-theme="light"] td .flex button.hover\:bg-slate-700:hover,
+[data-theme="light"] td .flex button[title*="View"]:hover {
+  background-color: #334155 !important;
+  border-color: #334155 !important;
+}
+
+
+/* Secondary text */
+html.light .text-slate-300,
+html.light .text-slate-400,
+[data-theme="light"] .text-slate-300,
+[data-theme="light"] .text-slate-400 {
+  color: #475569 !important;
+}
+
+/* Subtle / Muted text */
+html.light .text-slate-500,
+[data-theme="light"] .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Hover text */
+html.light .hover\:text-white:hover,
+[data-theme="light"] .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+/* 6. Forms, Inputs, Selects & Textareas in Light Mode */
+html.light input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+html.light select,
+html.light textarea,
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light input:focus,
+html.light select:focus,
+html.light textarea:focus,
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px #3b82f6 !important;
+  outline: none !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder,
+html.light .placeholder-slate-500::placeholder,
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder,
+[data-theme="light"] .placeholder-slate-500::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.light select option,
+[data-theme="light"] select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* 7. Tables & Data Grids */
+html.light thead,
+html.light thead tr,
+html.light thead th,
+[data-theme="light"] thead,
+[data-theme="light"] thead th {
+  background-color: #f8fafc !important;
+  color: #475569 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html.light tbody tr,
+[data-theme="light"] tbody tr {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+html.light tbody tr:hover,
+html.light tbody tr.hover\:bg-slate-800\/40:hover,
+html.light tbody tr.hover\:bg-slate-800\/50:hover,
+[data-theme="light"] tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html.light tbody td,
+[data-theme="light"] tbody td {
+  color: #1e293b !important;
+}
+
+/* 8. Header / Navbar in Light Mode */
+html.light header,
+[data-theme="light"] header {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: #e2e8f0 !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* 9. Footer in Light Mode */
+html.light footer,
+[data-theme="light"] footer {
+  background-color: #f8fafc !important;
+  border-top-color: #e2e8f0 !important;
+}
+
+/* 10. Glassmorphism Panels in Light Mode */
+html.light .glass-panel,
+[data-theme="light"] .glass-panel {
+  background: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+html.light .glass-panel-hover:hover,
+[data-theme="light"] .glass-panel-hover:hover {
+  background: #ffffff !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(59, 130, 246, 0.08) !important;
+}
+
+/* 11. Modals & Overlays */
+html.light .fixed.inset-0.bg-black\/70,
+html.light .fixed.inset-0.bg-black\/80,
+html.light .fixed.inset-0.bg-black\/60,
+[data-theme="light"] .fixed.inset-0.bg-black\/70,
+[data-theme="light"] .fixed.inset-0.bg-black\/80 {
+  background-color: rgba(15, 23, 42, 0.45) !important;
+}
+
+/* 12. Top Executive Banners in Light Mode (Admin & Employee) */
+html.light .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r,
+html.light .from-blue-900\/40,
+html.light .from-blue-950\/60,
+html.light .from-blue-950\/40,
+[data-theme="light"] .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r,
+[data-theme="light"] .from-blue-900\/40,
+[data-theme="light"] .from-blue-950\/60,
+[data-theme="light"] .from-blue-950\/40 {
+  --tw-gradient-from: #eff6ff !important;
+  --tw-gradient-to: #ffffff !important;
+  --tw-gradient-stops: #eff6ff, #f8fafc, #ffffff !important;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 50%, #ffffff 100%) !important;
+  border-color: #bfdbfe !important;
+  box-shadow: 0 4px 20px -2px rgba(59, 130, 246, 0.08) !important;
+}
+
+html.light .via-indigo-900\/30,
+html.light .via-slate-900\/90,
+html.light .via-indigo-950\/30,
+[data-theme="light"] .via-indigo-900\/30,
+[data-theme="light"] .via-slate-900\/90 {
+  --tw-gradient-via: #f8fafc !important;
+}
+
+html.light .to-slate-900\/80,
+html.light .to-slate-950,
+html.light .to-purple-950\/40,
+[data-theme="light"] .to-slate-900\/80,
+[data-theme="light"] .to-slate-950 {
+  --tw-gradient-to: #ffffff !important;
+}
+
+/* Header Banner Headings and Subtitles */
+html.light .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r h1,
+html.light .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r h1.text-white,
+[data-theme="light"] .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r h1,
+[data-theme="light"] .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r h1.text-white {
+  color: #0f172a !important;
+}
+
+/* Employee Avatar Initial Icon (Always Pure White in both themes) */
+.employee-avatar-text,
+html.light .employee-avatar-text,
+html.light [class*="bg-gradient-to-tr"] .employee-avatar-text,
+[data-theme="light"] .employee-avatar-text {
+  color: #ffffff !important;
+}
+
+html.light .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r p,
+[data-theme="light"] .rounded-2xl.sm\:rounded-3xl.p-4.sm\:p-8.bg-gradient-to-r p {
+  color: #475569 !important;
+}
+
+/* Header Banner Badges & Buttons */
+html.light .bg-slate-900\/90.border-slate-700\/80,
+html.light .bg-slate-900\/90.border-slate-700,
+html.light .bg-slate-900.border-slate-700,
+[data-theme="light"] .bg-slate-900\/90.border-slate-700\/80,
+[data-theme="light"] .bg-slate-900.border-slate-700 {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+html.light .bg-slate-900.border-slate-700:hover,
+html.light .bg-slate-900\/90.border-slate-700:hover,
+[data-theme="light"] .bg-slate-900.border-slate-700:hover {
+  background-color: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-blue-500\/20.text-blue-300,
+[data-theme="light"] .bg-blue-500\/20.text-blue-300 {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border-color: #bfdbfe !important;
+}
+
+/* 13. KPI Stat Cards in Light Mode (Pristine White with Vibrant Numbers & Icons) */
+html.light .bg-emerald-950\/20,
+html.light .bg-emerald-950\/25,
+html.light .bg-emerald-950\/30,
+html.light .bg-amber-950\/20,
+html.light .bg-amber-950\/25,
+html.light .bg-amber-950\/30,
+html.light .bg-rose-950\/20,
+html.light .bg-rose-950\/25,
+html.light .bg-rose-950\/30,
+html.light .bg-purple-950\/20,
+html.light .bg-purple-950\/25,
+html.light .bg-purple-950\/30,
+html.light .bg-indigo-950\/20,
+html.light .bg-indigo-950\/25,
+html.light .bg-indigo-950\/30,
+html.light .bg-indigo-950\/40,
+html.light .bg-blue-950\/20,
+html.light .bg-blue-950\/25,
+html.light .bg-blue-950\/30,
+html.light .bg-blue-950\/40,
+[data-theme="light"] .bg-emerald-950\/20,
+[data-theme="light"] .bg-emerald-950\/25,
+[data-theme="light"] .bg-amber-950\/20,
+[data-theme="light"] .bg-amber-950\/25,
+[data-theme="light"] .bg-rose-950\/20,
+[data-theme="light"] .bg-rose-950\/25,
+[data-theme="light"] .bg-purple-950\/20,
+[data-theme="light"] .bg-purple-950\/25,
+[data-theme="light"] .bg-indigo-950\/20,
+[data-theme="light"] .bg-indigo-950\/25,
+[data-theme="light"] .bg-indigo-950\/30,
+[data-theme="light"] .bg-indigo-950\/40,
+[data-theme="light"] .bg-blue-950\/25 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Vibrant KPI Numbers in Light Mode */
+html.light .text-emerald-300,
+html.light .text-emerald-400,
+[data-theme="light"] .text-emerald-300,
+[data-theme="light"] .text-emerald-400 {
+  color: #059669 !important;
+}
+
+html.light .text-amber-300,
+html.light .text-amber-400,
+[data-theme="light"] .text-amber-300,
+[data-theme="light"] .text-amber-400 {
+  color: #d97706 !important;
+}
+
+html.light .text-rose-300,
+html.light .text-rose-400,
+[data-theme="light"] .text-rose-300,
+[data-theme="light"] .text-rose-400 {
+  color: #e11d48 !important;
+}
+
+html.light .text-purple-300,
+html.light .text-purple-400,
+[data-theme="light"] .text-purple-300,
+[data-theme="light"] .text-purple-400 {
+  color: #7c3aed !important;
+}
+
+html.light .text-indigo-300,
+html.light .text-indigo-400,
+[data-theme="light"] .text-indigo-300,
+[data-theme="light"] .text-indigo-400 {
+  color: #4338ca !important;
+}
+
+html.light .text-blue-300,
+html.light .text-blue-400,
+[data-theme="light"] .text-blue-300,
+[data-theme="light"] .text-blue-400 {
+  color: #2563eb !important;
+}
+
+/* KPI Subtitles */
+html.light .text-emerald-400\/70,
+html.light .text-emerald-400\/80,
+[data-theme="light"] .text-emerald-400\/70,
+[data-theme="light"] .text-emerald-400\/80 {
+  color: #047857 !important;
+  font-weight: 600 !important;
+}
+
+html.light .text-amber-400\/70,
+html.light .text-amber-400\/80,
+[data-theme="light"] .text-amber-400\/70,
+[data-theme="light"] .text-amber-400\/80 {
+  color: #b45309 !important;
+  font-weight: 600 !important;
+}
+
+html.light .text-rose-400\/70,
+html.light .text-rose-400\/80,
+[data-theme="light"] .text-rose-400\/70,
+[data-theme="light"] .text-rose-400\/80 {
+  color: #be123c !important;
+  font-weight: 600 !important;
+}
+
+html.light .text-purple-400\/70,
+html.light .text-purple-400\/80,
+[data-theme="light"] .text-purple-400\/70,
+[data-theme="light"] .text-purple-400\/80 {
+  color: #6b21a8 !important;
+  font-weight: 600 !important;
+}
+
+html.light .text-indigo-400\/70,
+html.light .text-indigo-400\/80,
+[data-theme="light"] .text-indigo-400\/70,
+[data-theme="light"] .text-indigo-400\/80 {
+  color: #4338ca !important;
+  font-weight: 600 !important;
+}
+
+html.light .text-blue-400\/70,
+html.light .text-blue-400\/80,
+[data-theme="light"] .text-blue-400\/70,
+[data-theme="light"] .text-blue-400\/80 {
+  color: #1d4ed8 !important;
+  font-weight: 600 !important;
+}
+
+
+/* 14. Monthly Statistics Summary Bar in Light Mode */
+html.light .bg-slate-900\/60,
+[data-theme="light"] .bg-slate-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* 15. Roster Summary Bar & Chips in Light Mode */
+html.light .bg-slate-950\/40,
+html.light .bg-slate-950\/50,
+[data-theme="light"] .bg-slate-950\/40,
+[data-theme="light"] .bg-slate-950\/50 {
+  background-color: #f8fafc !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+html.light .bg-emerald-950\/30,
+html.light .bg-emerald-950\/40,
+[data-theme="light"] .bg-emerald-950\/30,
+[data-theme="light"] .bg-emerald-950\/40 {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+  color: #065f46 !important;
+}
+
+html.light .bg-amber-950\/30,
+html.light .bg-amber-950\/40,
+[data-theme="light"] .bg-amber-950\/30,
+[data-theme="light"] .bg-amber-950\/40 {
+  background-color: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #92400e !important;
+}
+
+html.light .bg-rose-950\/30,
+html.light .bg-rose-950\/40,
+[data-theme="light"] .bg-rose-950\/30,
+[data-theme="light"] .bg-rose-950\/40 {
+  background-color: #fff1f2 !important;
+  border-color: #fecdd3 !important;
+  color: #9f1239 !important;
+}
+
+html.light .bg-purple-950\/30,
+html.light .bg-purple-950\/40,
+[data-theme="light"] .bg-purple-950\/30,
+[data-theme="light"] .bg-purple-950\/40 {
+  background-color: #faf5ff !important;
+  border-color: #e9d5ff !important;
+  color: #6b21a8 !important;
+}
+
+html.light .bg-indigo-950\/30,
+html.light .bg-indigo-950\/40,
+[data-theme="light"] .bg-indigo-950\/30,
+[data-theme="light"] .bg-indigo-950\/40 {
+  background-color: #eef2ff !important;
+  border-color: #c7d2fe !important;
+  color: #3730a3 !important;
+}
+
+html.light .bg-blue-950\/30,
+html.light .bg-blue-950\/40,
+[data-theme="light"] .bg-blue-950\/30,
+[data-theme="light"] .bg-blue-950\/40 {
+  background-color: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1e40af !important;
+}
+
+/* 16. Status Badges & Chips in Light Mode */
+html.light .bg-emerald-500\/10,
+html.light .bg-emerald-500\/20,
+[data-theme="light"] .bg-emerald-500\/10 {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+  border-color: #a7f3d0 !important;
+}
+
+html.light .bg-blue-500\/10,
+html.light .bg-blue-500\/20,
+[data-theme="light"] .bg-blue-500\/10 {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+  border-color: #bfdbfe !important;
+}
+
+html.light .bg-amber-500\/10,
+html.light .bg-amber-500\/20,
+[data-theme="light"] .bg-amber-500\/10 {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #fde68a !important;
+}
+
+html.light .bg-rose-500\/10,
+html.light .bg-rose-500\/20,
+[data-theme="light"] .bg-rose-500\/10 {
+  background-color: #ffe4e6 !important;
+  color: #9f1239 !important;
+  border-color: #fecdd3 !important;
+}
+
+html.light .bg-purple-500\/10,
+html.light .bg-purple-500\/20,
+[data-theme="light"] .bg-purple-500\/10 {
+  background-color: #f3e8ff !important;
+  color: #6b21a8 !important;
+  border-color: #e9d5ff !important;
+}
+
+/* 17. Light Mode Scrollbars */
+html.light ::-webkit-scrollbar-track,
+[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb,
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+html.light ::-webkit-scrollbar-thumb:hover,
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 

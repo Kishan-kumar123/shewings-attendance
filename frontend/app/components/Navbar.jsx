@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, UserCheck, LogOut, Clock, Building2, MapPin } from 'lucide-react';
+import { ShieldCheck, UserCheck, LogOut, Clock, Building2, MapPin, Sun, Moon } from 'lucide-react';
 import { apiLogout } from '../lib/api';
+import { useTheme } from '../lib/ThemeContext';
 
 export default function Navbar({ user, onLogout, officeSettings }) {
+  const { theme, toggleTheme } = useTheme();
   const [currentTime, setCurrentTime] = useState('');
   const [currentDate, setCurrentDate] = useState('');
 
@@ -13,6 +15,7 @@ export default function Navbar({ user, onLogout, officeSettings }) {
       const now = new Date();
       setCurrentTime(
         now.toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
@@ -21,6 +24,7 @@ export default function Navbar({ user, onLogout, officeSettings }) {
       );
       setCurrentDate(
         now.toLocaleDateString('en-IN', {
+          timeZone: 'Asia/Kolkata',
           weekday: 'short',
           month: 'short',
           day: 'numeric',
@@ -57,8 +61,8 @@ export default function Navbar({ user, onLogout, officeSettings }) {
           </div>
         </div>
 
-        {/* Live Clock & User Controls */}
-        <div className="flex items-center gap-2 sm:gap-4 md:gap-6 flex-shrink-0">
+        {/* Live Clock, Theme Toggle & User Controls */}
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-shrink-0">
           {/* Live digital clock */}
           <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-300 text-xs">
             <Clock className="w-3.5 h-3.5 text-blue-400" />
@@ -66,6 +70,22 @@ export default function Navbar({ user, onLogout, officeSettings }) {
             <span className="text-slate-500">|</span>
             <span className="text-slate-400">{currentDate}</span>
           </div>
+
+          {/* Theme Toggle Button (Sun & Moon) */}
+          <button
+            type="button"
+            id="theme-toggle-btn"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            className="p-1.5 sm:p-2 rounded-xl border border-slate-800 bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white transition-all duration-200 flex items-center justify-center cursor-pointer shadow-sm active:scale-95 group focus:outline-none focus:ring-2 focus:ring-blue-500/40 flex-shrink-0"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400 group-hover:rotate-45 transition-transform duration-300" />
+            ) : (
+              <Moon className="w-4 h-4 text-blue-600 group-hover:-rotate-12 transition-transform duration-300" />
+            )}
+          </button>
 
           {/* User profile pill */}
           {user && (

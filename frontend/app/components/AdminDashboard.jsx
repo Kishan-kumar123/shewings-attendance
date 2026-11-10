@@ -5,7 +5,8 @@ import {
   Users, CheckCircle2, Clock, UserX, Calendar,
   Search, Filter, Download, Plus, Edit2, ShieldAlert, MapPin,
   Settings, Check, X, FileText, ChevronRight, Eye, RefreshCw, Key,
-  TrendingUp, BarChart3, Building2, UserCheck, Power, Tent, Home, Briefcase, Menu
+  TrendingUp, BarChart3, Building2, UserCheck, Power, Tent, Home, Briefcase, Menu,
+  Lock, EyeOff, ShieldCheck, KeyRound, AlertCircle
 } from 'lucide-react';
 import {
   apiGetAttendanceStats,
@@ -24,12 +25,13 @@ import {
   apiUpdateOfficeSettings,
   apiManualAttendanceAdjustment,
   apiGetMonthlyReport,
+  apiChangeAdminPassword,
   BACKEND_URL
 } from '../lib/api';
 import SelfieThumbnail from './SelfieThumbnail';
 
 export default function AdminDashboard({ user, officeSettings, onOfficeSettingsUpdated }) {
-  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance', 'reports', 'employees', 'leaves', 'settings'
+  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance', 'reports', 'employees', 'leaves', 'settings', 'security'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState('');
@@ -124,10 +126,58 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   });
   const [settingsMsg, setSettingsMsg] = useState('');
 
+  // Admin Change Password state (Security / Account Settings)
+  const [adminPwForm, setAdminPwForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+  const [adminPwSubmitting, setAdminPwSubmitting] = useState(false);
+  const [adminPwMsg, setAdminPwMsg] = useState({ type: '', text: '' });
+
   // Modals
   const [selectedSelfie, setSelectedSelfie] = useState(null);
   const [manualAdjustmentModal, setManualAdjustmentModal] = useState(null);
   const [adjForm, setAdjForm] = useState({ status: 'Present', reason: '', checkInTime: '', checkOutTime: '' });
+
+  const parseISTDate = (dateVal) => {
+    if (!dateVal) return null;
+    if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
+    if (typeof dateVal === 'number') return new Date(dateVal);
+    if (typeof dateVal !== 'string') return null;
+    const trimmed = dateVal.trim();
+    if (!trimmed) return null;
+    if (trimmed.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+      const d = new Date(trimmed);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const d = new Date(`${trimmed}T00:00:00+05:30`);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/.test(trimmed)) {
+      const normalized = trimmed.replace(' ', 'T');
+      const d = new Date(`${normalized}+05:30`);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const fallback = new Date(trimmed);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  };
+
+  const formatTime = (dateStr) => {
+    const d = parseISTDate(dateStr);
+    if (!d) return '--:--';
+    return d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
 
   const loadAllData = async () => {
     setLoading(true);
@@ -372,6 +422,72 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
     }
   };
 
+  // Handle Admin Password Change
+  const handleChangeAdminPassword = async (e) => {
+    e.preventDefault();
+    setAdminPwMsg({ type: '', text: '' });
+
+    const { currentPassword, newPassword, confirmPassword } = adminPwForm;
+
+    if (!currentPassword) {
+      setAdminPwMsg({ type: 'error', text: 'Please enter your current administrator password.' });
+      return;
+    }
+    if (!newPassword) {
+      setAdminPwMsg({ type: 'error', text: 'Please enter your new administrator password.' });
+      return;
+    }
+    if (newPassword.length < 6) {
+      setAdminPwMsg({ type: 'error', text: 'New password must be at least 6 characters in length.' });
+      return;
+    }
+    if (!confirmPassword) {
+      setAdminPwMsg({ type: 'error', text: 'Please confirm your new password.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setAdminPwMsg({ type: 'error', text: 'New password and confirmation password do not match.' });
+      return;
+    }
+    if (currentPassword === newPassword) {
+      setAdminPwMsg({ type: 'error', text: 'New password cannot be identical to your current password.' });
+      return;
+    }
+
+    setAdminPwSubmitting(true);
+    try {
+      const res = await apiChangeAdminPassword({
+        currentPassword,
+        newPassword,
+        confirmPassword
+      });
+
+      if (res && res.success) {
+        setAdminPwMsg({
+          type: 'success',
+          text: res.message || 'Administrator password updated successfully in TiDB Cloud database.'
+        });
+        setAdminPwForm({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        });
+      } else {
+        setAdminPwMsg({
+          type: 'error',
+          text: res.message || 'Failed to update administrator password.'
+        });
+      }
+    } catch (err) {
+      setAdminPwMsg({
+        type: 'error',
+        text: err.data?.message || err.message || 'An error occurred while changing password. Please verify current password and try again.'
+      });
+    } finally {
+      setAdminPwSubmitting(false);
+    }
+  };
+
   // Pin Current Location as Office
   const handlePinCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -589,14 +705,27 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
           </div>
         </div>
 
-        <button
-          onClick={loadAllData}
-          disabled={loading}
-          className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold transition active:scale-95 flex-shrink-0 cursor-pointer"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-400' : ''}`} />
-          <span>Refresh Database</span>
-        </button>
+        <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-2 flex-shrink-0">
+          <button
+            onClick={() => setActiveTab('security')}
+            className={`w-full sm:w-auto flex items-center justify-center gap-2 px-3.5 py-2.5 min-h-[42px] rounded-xl text-xs font-semibold transition active:scale-95 cursor-pointer border ${
+              activeTab === 'security'
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-lg shadow-amber-500/10'
+                : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 border-slate-700'
+            }`}
+          >
+            <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+            <span>Admin Security</span>
+          </button>
+          <button
+            onClick={loadAllData}
+            disabled={loading}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 min-h-[42px] rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold transition active:scale-95 cursor-pointer"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-400' : ''}`} />
+            <span>Refresh Database</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards Grid */}
@@ -717,6 +846,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
             {activeTab === 'employees' && <Users className="w-4 h-4" />}
             {activeTab === 'leaves' && <FileText className="w-4 h-4" />}
             {activeTab === 'settings' && <Settings className="w-4 h-4" />}
+            {activeTab === 'security' && <ShieldCheck className="w-4 h-4 text-amber-400" />}
           </div>
           <div>
             <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Active View</div>
@@ -726,6 +856,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               {activeTab === 'employees' && `Employee Directory (${employees.length})`}
               {activeTab === 'leaves' && `Leave Management (${leaves.length})`}
               {activeTab === 'settings' && 'Office & Geofence Settings'}
+              {activeTab === 'security' && 'Security & Account Settings'}
             </div>
           </div>
         </div>
@@ -792,7 +923,11 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     <Calendar className="w-4 h-4 text-blue-400" />
                     <span>Daily Attendance Roster</span>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${
+                    activeTab === 'attendance'
+                      ? 'bg-white/25 text-white ring-1 ring-white/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}>
                     Today
                   </span>
                 </button>
@@ -831,7 +966,11 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     <Users className="w-4 h-4 text-emerald-400" />
                     <span>Employee Directory</span>
                   </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${
+                    activeTab === 'employees'
+                      ? 'bg-white/25 text-white ring-1 ring-white/30'
+                      : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}>
                     {employees.length}
                   </span>
                 </button>
@@ -875,6 +1014,27 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     <Settings className="w-4 h-4 text-purple-400" />
                     <span>Office & Geofence Settings</span>
                   </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('security');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full p-3 rounded-xl text-left text-xs font-semibold flex items-center justify-between transition ${
+                    activeTab === 'security'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-400" />
+                    <span>Security & Account Settings</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                    Admin
+                  </span>
                 </button>
               </div>
             </div>
@@ -935,7 +1095,11 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
           }`}
         >
           <span>Employee Directory</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${
+            activeTab === 'employees'
+              ? 'bg-white/25 text-white ring-1 ring-white/30'
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+          }`}>
             {employees.length}
           </span>
         </button>
@@ -949,7 +1113,11 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
           }`}
         >
           <span>Leave Management</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${
+            activeTab === 'leaves'
+              ? 'bg-white/25 text-white ring-1 ring-white/30'
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+          }`}>
             {leaves.length}
           </span>
         </button>
@@ -962,7 +1130,19 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
-          Office & Geofence Settings
+          Office Settings
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('security')}
+          className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap min-h-[38px] flex items-center justify-center gap-1.5 ${
+            activeTab === 'security'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+          <span>Security & Account</span>
         </button>
       </div>
 
@@ -1170,13 +1350,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                       <td className="py-3.5 px-4">
                         {record.check_in_time ? (
                           <div className="font-mono text-slate-200">
-                            {new Date(record.check_in_time).toLocaleTimeString('en-IN', {
-                              timeZone: 'Asia/Kolkata',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                              hour12: true
-                            })}
+                            {formatTime(record.check_in_time)}
                           </div>
                         ) : (
                           <span className="text-slate-600 font-mono">--:--</span>
@@ -1186,13 +1360,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                       <td className="py-3.5 px-4">
                         {record.check_out_time ? (
                           <div className="font-mono text-slate-200">
-                            {new Date(record.check_out_time).toLocaleTimeString('en-IN', {
-                              timeZone: 'Asia/Kolkata',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              second: '2-digit',
-                              hour12: true
-                            })}
+                            {formatTime(record.check_out_time)}
                           </div>
                         ) : record.check_in_time ? (
                           <span className="text-blue-400 font-medium">Active Shift</span>
@@ -1322,7 +1490,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                               checkOutTime: record.check_out_time || ''
                             });
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white text-xs font-medium transition"
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-blue-600 text-slate-700 dark:text-slate-300 hover:text-white border border-slate-200 dark:border-transparent text-xs font-medium transition shadow-sm"
                         >
                           Adjust
                         </button>
@@ -1668,7 +1836,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                             type="button"
                             onClick={() => handleViewEmpDetails(emp.id)}
                             title="View Employee Profile & History"
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition min-h-[34px] min-w-[34px] flex items-center justify-center"
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-700 text-slate-700 dark:text-slate-300 hover:text-white border border-slate-200 dark:border-transparent transition min-h-[34px] min-w-[34px] flex items-center justify-center shadow-sm"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </button>
@@ -1678,7 +1846,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                             type="button"
                             onClick={() => handleOpenEditEmp(emp)}
                             title="Edit Employee Info"
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-300 hover:text-white transition min-h-[34px] min-w-[34px] flex items-center justify-center"
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-blue-600 text-blue-600 dark:text-slate-300 hover:text-white border border-slate-200 dark:border-transparent transition min-h-[34px] min-w-[34px] flex items-center justify-center shadow-sm"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
@@ -1692,7 +1860,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                               setResetMsg({ type: '', text: '' });
                             }}
                             title="Reset Password"
-                            className="p-2 rounded-lg bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white transition min-h-[34px] min-w-[34px] flex items-center justify-center"
+                            className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-amber-600 text-amber-600 dark:text-slate-300 hover:text-white border border-slate-200 dark:border-transparent transition min-h-[34px] min-w-[34px] flex items-center justify-center shadow-sm"
                           >
                             <Key className="w-3.5 h-3.5" />
                           </button>
@@ -1702,10 +1870,10 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                             type="button"
                             onClick={() => handleToggleStatus(emp)}
                             title={emp.status === 'active' ? 'Deactivate Account' : 'Activate Account'}
-                            className={`p-2 rounded-lg transition min-h-[34px] min-w-[34px] flex items-center justify-center ${
+                            className={`p-2 rounded-lg border border-slate-200 dark:border-transparent transition min-h-[34px] min-w-[34px] flex items-center justify-center shadow-sm ${
                               emp.status === 'active'
-                                ? 'bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white'
-                                : 'bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white'
+                                ? 'bg-slate-100 dark:bg-slate-800 hover:bg-rose-600 text-rose-600 dark:text-slate-300 hover:text-white'
+                                : 'bg-slate-100 dark:bg-slate-800 hover:bg-emerald-600 text-emerald-600 dark:text-slate-300 hover:text-white'
                             }`}
                           >
                             <Power className="w-3.5 h-3.5" />
@@ -1896,7 +2064,28 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
 
       {/* Tab 4: Office & Geofence Settings */}
       {activeTab === 'settings' && (
-        <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-8 shadow-2xl">
+        <div className="space-y-6">
+          {/* Settings Sub-navigation Bar */}
+          <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 w-fit">
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/25 flex items-center gap-1.5"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Office & Geofence Settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('security')}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition flex items-center gap-1.5"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+              <span>Security & Account Settings</span>
+            </button>
+          </div>
+
+          <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-8 shadow-2xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 sm:pb-6 border-b border-slate-800 mb-6">
             <div>
               <h3 className="font-bold text-white text-base">Office Geofence & Shift Configuration</h3>
@@ -2202,6 +2391,313 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
             </div>
           </form>
         </div>
+      </div>
+      )}
+
+      {/* Tab 5: Administrator Security & Account Settings */}
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          {/* Settings Sub-navigation Bar */}
+          <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 w-fit">
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition flex items-center gap-1.5"
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Office & Geofence Settings</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('security')}
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/25 flex items-center gap-1.5"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-amber-300" />
+              <span>Security & Account Settings</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Main Card: Change Admin Password */}
+            <div className="lg:col-span-2 rounded-3xl bg-slate-900/90 border border-slate-800 p-5 sm:p-8 shadow-2xl space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-blue-500/20 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                    <KeyRound className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-white text-base sm:text-lg">Change Administrator Password</h3>
+                    <p className="text-xs text-slate-400">
+                      Update master administrator credentials securely. Hashed with Bcrypt (10 salt rounds) and committed to TiDB Cloud.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-semibold w-fit">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Admin Session Active</span>
+                </div>
+              </div>
+
+              {/* Success Alert */}
+              {adminPwMsg.type === 'success' && (
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                    <div>
+                      <span className="font-bold">Success: </span>
+                      <span>{adminPwMsg.text}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAdminPwMsg({ type: '', text: '' })}
+                    className="p-1 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-500/20"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* Error Alert */}
+              {adminPwMsg.type === 'error' && (
+                <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
+                  <div className="flex items-center gap-2.5">
+                    <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0" />
+                    <div>
+                      <span className="font-bold">Error: </span>
+                      <span>{adminPwMsg.text}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAdminPwMsg({ type: '', text: '' })}
+                    className="p-1 rounded-lg text-rose-400 hover:text-white hover:bg-rose-500/20"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              <form onSubmit={handleChangeAdminPassword} className="space-y-5 text-xs">
+                {/* Current Password */}
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1.5">
+                    Current Password <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPw ? 'text' : 'password'}
+                      required
+                      autoComplete="current-password"
+                      placeholder="Enter your current administrator password"
+                      value={adminPwForm.currentPassword}
+                      onChange={(e) => setAdminPwForm({ ...adminPwForm, currentPassword: e.target.value })}
+                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[42px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPw(!showCurrentPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                      aria-label={showCurrentPw ? 'Hide password' : 'Show password'}
+                    >
+                      {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Verified against active password hash via secure Bcrypt verification.
+                  </p>
+                </div>
+
+                {/* New Password */}
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1.5">
+                    New Password <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPw ? 'text' : 'password'}
+                      required
+                      autoComplete="new-password"
+                      placeholder="Enter new password (at least 6 characters)"
+                      value={adminPwForm.newPassword}
+                      onChange={(e) => setAdminPwForm({ ...adminPwForm, newPassword: e.target.value })}
+                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[42px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPw(!showNewPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                      aria-label={showNewPw ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm New Password */}
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1.5">
+                    Confirm New Password <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showConfirmPw ? 'text' : 'password'}
+                      required
+                      autoComplete="new-password"
+                      placeholder="Re-enter your new password to confirm"
+                      value={adminPwForm.confirmPassword}
+                      onChange={(e) => setAdminPwForm({ ...adminPwForm, confirmPassword: e.target.value })}
+                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[42px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPw(!showConfirmPw)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                      aria-label={showConfirmPw ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Live Password Requirements Checklist */}
+                <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-2 text-[11px]">
+                  <span className="text-slate-400 font-semibold block">Password Requirements:</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                        adminPwForm.newPassword.length >= 6
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-slate-800 text-slate-500'
+                      }`}>
+                        {adminPwForm.newPassword.length >= 6 ? '✓' : '•'}
+                      </span>
+                      <span className={adminPwForm.newPassword.length >= 6 ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                        Min. 6 characters
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                        adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-slate-800 text-slate-500'
+                      }`}>
+                        {adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword ? '✓' : '•'}
+                      </span>
+                      <span className={adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                        Differs from current
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                        adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-slate-800 text-slate-500'
+                      }`}>
+                        {adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword ? '✓' : '•'}
+                      </span>
+                      <span className={adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                        Passwords match
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form Buttons */}
+                <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                      setAdminPwMsg({ type: '', text: '' });
+                    }}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition"
+                  >
+                    Clear Form
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={adminPwSubmitting}
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition flex items-center justify-center gap-2 min-h-[42px]"
+                  >
+                    {adminPwSubmitting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                        <span>Updating Password in TiDB...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-4 h-4" />
+                        <span>Update Admin Password</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Side Card: Administrator Profile & Security Policy */}
+            <div className="space-y-6">
+              {/* Profile Card */}
+              <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-5 sm:p-6 shadow-xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-base shadow-lg shadow-blue-600/25">
+                    {user?.displayName ? user.displayName.substring(0, 2).toUpperCase() : 'AD'}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">{user?.displayName || 'Administrator'}</h4>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-semibold border border-amber-500/30">
+                      Super Administrator
+                    </span>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-800/80 text-xs">
+                  <div className="py-2.5 flex justify-between">
+                    <span className="text-slate-400">Account Email:</span>
+                    <span className="text-white font-mono font-medium">{user?.email || 'admin@shewings.org'}</span>
+                  </div>
+                  <div className="py-2.5 flex justify-between">
+                    <span className="text-slate-400">Role Authority:</span>
+                    <span className="text-emerald-400 font-semibold">admin (Full Access)</span>
+                  </div>
+                  <div className="py-2.5 flex justify-between">
+                    <span className="text-slate-400">Database Engine:</span>
+                    <span className="text-purple-300 font-semibold">TiDB Cloud (MySQL)</span>
+                  </div>
+                  <div className="py-2.5 flex justify-between">
+                    <span className="text-slate-400">Hashing Algorithm:</span>
+                    <span className="text-blue-300 font-mono font-semibold">Bcrypt (10 Rounds)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security Policy Information */}
+              <div className="rounded-3xl bg-gradient-to-br from-slate-900/90 to-slate-950 border border-slate-800 p-5 sm:p-6 shadow-xl space-y-3">
+                <div className="flex items-center gap-2 text-white font-bold text-xs">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Security & Isolation Guarantees</span>
+                </div>
+                <ul className="text-[11px] text-slate-300 space-y-2.5 list-disc list-inside">
+                  <li>
+                    <strong className="text-white">Strict Authorization:</strong> Employees cannot modify administrator passwords under any circumstances.
+                  </li>
+                  <li>
+                    <strong className="text-white">Zero Plaintext:</strong> Passwords are never stored in plain text, logged to server consoles, or returned in API responses.
+                  </li>
+                  <li>
+                    <strong className="text-white">Data Isolation:</strong> Password updates only modify the administrator hash and never alter employee records or attendance logs.
+                  </li>
+                  <li>
+                    <strong className="text-white">Brute-Force Guard:</strong> Protected by IP rate limiting to prevent unauthorized credential guessing.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal: View Full High-Res Selfie */}
@@ -2236,7 +2732,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               </div>
               <div>
                 <span className="text-slate-500">Timestamp: </span>
-                {new Date(selectedSelfie.time).toLocaleString('en-IN')}
+                {parseISTDate(selectedSelfie.time)?.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) || '--:--'}
               </div>
               {selectedSelfie.mode === 'CAMP' ? (
                 <div>

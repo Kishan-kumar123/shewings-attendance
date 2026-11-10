@@ -122,7 +122,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0b1120] text-slate-100">
+    <div className="min-h-screen flex flex-col bg-[#0b1120] text-slate-100 transition-colors duration-200">
       <Navbar
         user={user}
         onLogout={handleLogout}

@@ -3,7 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../database/db');
-const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
+const { authenticateToken, requireRole, JWT_SECRET } = require('../middleware/auth');
+const { getKolkataDateString } = require('../utils/time');
 
 /**
  * POST /api/auth/register
@@ -105,7 +106,7 @@ router.post('/register', async (req, res) => {
     }
 
     const assignedDesignation = designation && designation.trim() ? designation.trim() : 'Staff Member';
-    const today = new Date().toISOString().split('T')[0];
+    const today = getKolkataDateString();
 
     // 3. Insert employee
     const [empResult] = await connection.query(
@@ -300,11 +301,113 @@ router.get('/me', authenticateToken, async (req, res) => {
 });
 
 /**
+ * PUT /api/auth/admin/change-password
+ * Dedicated protected endpoint for Administrator to change their password
+ * Enforces strict admin authorization, current password verification, and bcrypt hashing
+ */
+router.put('/admin/change-password', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    // 1. Enforce admin role authorization
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: Only administrator accounts have permission to perform this action.'
+      });
+    }
+
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+
+    // 2. Validate required fields
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password, new password, and confirm password are required.'
+      });
+    }
+
+    // 3. Confirm password matching
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password and confirmation password do not match.'
+      });
+    }
+
+    // 4. Validate new password length
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters in length.'
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password cannot be identical to your current password.'
+      });
+    }
+
+    // 5. Fetch admin user record securely
+    const [users] = await pool.query(
+      'SELECT id, password_hash, role, status FROM users WHERE id = ? AND role = "admin"',
+      [req.user.id]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Administrator account not found.'
+      });
+    }
+
+    const adminUser = users[0];
+    if (adminUser.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: 'Administrator account is deactivated. Contact system support.'
+      });
+    }
+
+    // 6. Verify current password with existing bcrypt mechanism
+    const isMatch = await bcrypt.compare(currentPassword, adminUser.password_hash);
+    if (!isMatch) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect. Please verify and try again.'
+      });
+    }
+
+    // 7. Hash new password with 10 salt rounds (same algorithm used across backend)
+    const salt = await bcrypt.genSalt(10);
+    const newHash = await bcrypt.hash(newPassword, salt);
+
+    // 8. Update in database
+    await pool.query(
+      'UPDATE users SET password_hash = ? WHERE id = ? AND role = "admin"',
+      [newHash, req.user.id]
+    );
+
+    return res.json({
+      success: true,
+      message: 'Administrator password changed successfully.'
+    });
+  } catch (err) {
+    console.error('Admin password change error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update administrator password due to a server error.'
+    });
+  }
+});
+
+/**
  * PUT /api/auth/change-password
+ * General user change password endpoint
  */
 router.put('/change-password', authenticateToken, async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
@@ -313,10 +416,24 @@ router.put('/change-password', authenticateToken, async (req, res) => {
       });
     }
 
-    if (newPassword.length < 6) {
+    if (confirmPassword !== undefined && confirmPassword !== null && newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password and confirmation password do not match.'
+      });
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
       return res.status(400).json({
         success: false,
         message: 'New password must be at least 6 characters long.'
+      });
+    }
+
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password cannot be identical to your current password.'
       });
     }
 
@@ -343,7 +460,7 @@ router.put('/change-password', authenticateToken, async (req, res) => {
       message: 'Password updated successfully.'
     });
   } catch (err) {
-    console.error('Password change error:', err);
+    console.error('Password change error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update password.' });
   }
 });

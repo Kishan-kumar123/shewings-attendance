@@ -1,0 +1,12 @@
+{
+  "name": "shewings-attendance-app",
+  "version": "1.0.0",
+  "description": "SheWings Foundation Attendance & Geofenced Facial Verification System",
+  "private": true,
+  "scripts": {
+    "dev": "node start-dev.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+  }
+}

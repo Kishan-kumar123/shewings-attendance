@@ -108,7 +108,8 @@ export default function EmployeeDashboard({ user, officeSettings }) {
     }
 
     const interval = setInterval(() => {
-      const checkIn = new Date(todayAttendance.check_in_time);
+      const checkIn = parseISTDate(todayAttendance.check_in_time);
+      if (!checkIn) return;
       const now = new Date();
       const diffMs = Math.max(0, now - checkIn);
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -268,9 +269,34 @@ export default function EmployeeDashboard({ user, officeSettings }) {
     }
   };
 
+  const parseISTDate = (dateVal) => {
+    if (!dateVal) return null;
+    if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
+    if (typeof dateVal === 'number') return new Date(dateVal);
+    if (typeof dateVal !== 'string') return null;
+    const trimmed = dateVal.trim();
+    if (!trimmed) return null;
+    if (trimmed.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+      const d = new Date(trimmed);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const d = new Date(`${trimmed}T00:00:00+05:30`);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?$/.test(trimmed)) {
+      const normalized = trimmed.replace(' ', 'T');
+      const d = new Date(`${normalized}+05:30`);
+      return isNaN(d.getTime()) ? null : d;
+    }
+    const fallback = new Date(trimmed);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  };
+
   const formatTime = (dateStr) => {
-    if (!dateStr) return '--:--';
-    return new Date(dateStr).toLocaleTimeString('en-IN', {
+    const d = parseISTDate(dateStr);
+    if (!d) return '--:--';
+    return d.toLocaleTimeString('en-IN', {
       timeZone: 'Asia/Kolkata',
       hour: '2-digit',
       minute: '2-digit',
@@ -279,9 +305,9 @@ export default function EmployeeDashboard({ user, officeSettings }) {
     });
   };
 
-  const currentDayOfWeek = new Date().getDay(); // 0 = Sun, 6 = Sat
-  const isTodaySunday = currentDayOfWeek === 0;
-  const isTodaySaturday = currentDayOfWeek === 6;
+  const istWeekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }).format(new Date());
+  const isTodaySunday = istWeekday === 'Sun';
+  const isTodaySaturday = istWeekday === 'Sat';
 
   return (
     <div className="space-y-6 sm:space-y-8">
@@ -289,8 +315,10 @@ export default function EmployeeDashboard({ user, officeSettings }) {
       <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl p-4 sm:p-8 bg-gradient-to-r from-blue-950/60 via-slate-900/90 to-slate-950 border border-blue-500/20 backdrop-blur-xl shadow-xl">
         <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6">
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-xl sm:text-2xl font-black shadow-xl shadow-blue-600/30 flex-shrink-0">
-              {user.displayName ? user.displayName[0] : 'E'}
+            <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-xl sm:text-2xl font-black shadow-xl shadow-blue-600/30 flex-shrink-0 select-none">
+              <span className="text-white text-white-forced employee-avatar-text leading-none font-black" style={{ color: '#ffffff' }}>
+                {user.displayName ? user.displayName[0].toUpperCase() : 'E'}
+              </span>
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
@@ -1190,12 +1218,12 @@ export default function EmployeeDashboard({ user, officeSettings }) {
 
       {/* Attendance Modal: GPS + Live Selfie Verification */}
       {modalMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-black/85 backdrop-blur-md">
-          <div className="relative w-full max-w-lg rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl p-4 sm:p-7 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto no-scrollbar">
+          <div className="relative w-full max-w-lg my-auto rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-700 shadow-2xl p-3.5 sm:p-5 max-h-[92vh] overflow-y-auto no-scrollbar">
             {/* Modal Header */}
-            <div className="flex items-start justify-between pb-3.5 sm:pb-4 border-b border-slate-800 gap-2">
-              <div className="flex items-start sm:items-center gap-2.5 min-w-0">
-                <div className={`p-2 rounded-xl border flex-shrink-0 ${
+            <div className="flex items-start justify-between pb-2.5 sm:pb-3 border-b border-slate-800 gap-2">
+              <div className="flex items-start sm:items-center gap-2 sm:gap-2.5 min-w-0">
+                <div className={`p-1.5 sm:p-2 rounded-xl border flex-shrink-0 ${
                   currentActionAttendanceMode === 'CAMP'
                     ? 'bg-amber-600/20 text-amber-400 border-amber-500/30'
                     : currentActionAttendanceMode === 'WFH'
@@ -1203,15 +1231,15 @@ export default function EmployeeDashboard({ user, officeSettings }) {
                     : 'bg-blue-600/20 text-blue-400 border-blue-500/30'
                 }`}>
                   {currentActionAttendanceMode === 'CAMP' ? (
-                    <Tent className="w-5 h-5" />
+                    <Tent className="w-4 h-4 sm:w-5 sm:h-5" />
                   ) : currentActionAttendanceMode === 'WFH' ? (
-                    <Home className="w-5 h-5" />
+                    <Home className="w-4 h-4 sm:w-5 sm:h-5" />
                   ) : (
-                    <Camera className="w-5 h-5" />
+                    <Camera className="w-4 h-4 sm:w-5 sm:h-5" />
                   )}
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-base sm:text-lg font-bold text-white capitalize flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-white capitalize flex flex-wrap items-center gap-1.5 sm:gap-2">
                     <span>
                       {modalMode === 'check-in' ? 'Check-In' : 'Check-Out'}
                     </span>
@@ -1225,7 +1253,7 @@ export default function EmployeeDashboard({ user, officeSettings }) {
                       {currentActionAttendanceMode} MODE
                     </span>
                   </h3>
-                  <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+                  <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">
                     {currentActionAttendanceMode === 'CAMP'
                       ? 'Camp Duty: Direct check-in at field location (no geofence required)'
                       : currentActionAttendanceMode === 'WFH'
@@ -1237,22 +1265,22 @@ export default function EmployeeDashboard({ user, officeSettings }) {
               <button
                 type="button"
                 onClick={closeAttendanceModal}
-                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer flex-shrink-0"
+                className="p-1 sm:p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer flex-shrink-0"
                 aria-label="Close modal"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
 
             {/* Error or Success alerts */}
             {submitError && (
-              <div className="mt-3.5 sm:mt-4 p-3 sm:p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-center gap-2">
+              <div className="mt-2.5 sm:mt-3 p-2.5 sm:p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400" />
                 <span>{submitError}</span>
               </div>
             )}
             {submitSuccess && (
-              <div className="mt-3.5 sm:mt-4 p-3 sm:p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
+              <div className="mt-2.5 sm:mt-3 p-2.5 sm:p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
                 <span>{submitSuccess}</span>
               </div>
@@ -1260,7 +1288,7 @@ export default function EmployeeDashboard({ user, officeSettings }) {
 
             {/* WFH Not Approved Warning */}
             {currentActionAttendanceMode === 'WFH' && modalMode === 'check-in' && !isWfhApprovedToday && (
-              <div className="mt-3.5 sm:mt-4 p-3 sm:p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-1.5 sm:space-y-2">
+              <div className="mt-2.5 sm:mt-3 p-2.5 sm:p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-1.5">
                 <div className="flex items-center gap-2 font-semibold">
                   <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
                   <span>No Approved WFH Request for Today</span>
@@ -1271,10 +1299,10 @@ export default function EmployeeDashboard({ user, officeSettings }) {
               </div>
             )}
 
-            <div className="mt-4 sm:mt-6 space-y-4 sm:space-y-6">
+            <div className="mt-2.5 sm:mt-3.5 space-y-2.5 sm:space-y-3">
               {/* Step 1: Location & GPS Status */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                <label className="block text-[11px] sm:text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                   Step 1: Location & GPS Coordinates
                 </label>
                 <GeoLocationStatus
@@ -1286,7 +1314,7 @@ export default function EmployeeDashboard({ user, officeSettings }) {
 
               {/* Step 2: Camera Selfie Capture */}
               <div>
-                <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
+                <label className="block text-[11px] sm:text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5">
                   Step 2: Live Facial Selfie
                 </label>
                 <CameraCapture
@@ -1298,7 +1326,7 @@ export default function EmployeeDashboard({ user, officeSettings }) {
               </div>
 
               {/* Confirm and Submit button */}
-              <div className="pt-3 sm:pt-4 border-t border-slate-800">
+              <div className="pt-2.5 sm:pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   id="btn-confirm-attendance"
@@ -1309,7 +1337,7 @@ export default function EmployeeDashboard({ user, officeSettings }) {
                     (currentActionAttendanceMode === 'OFFICE' && !locationData?.isWithinGeofence) ||
                     (currentActionAttendanceMode === 'WFH' && modalMode === 'check-in' && !isWfhApprovedToday)
                   }
-                  className={`w-full py-3 sm:py-3.5 min-h-[46px] rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-xl transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer ${
+                  className={`w-full py-2.5 sm:py-3 min-h-[42px] sm:min-h-[44px] rounded-xl sm:rounded-2xl font-bold text-xs sm:text-sm shadow-xl transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer ${
                     currentActionAttendanceMode === 'CAMP'
                       ? 'bg-gradient-to-r from-amber-600 to-amber-500 hover:opacity-95 text-white shadow-amber-600/30'
                       : currentActionAttendanceMode === 'WFH'
