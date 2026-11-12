@@ -249,30 +249,83 @@ router.post('/', authenticateToken, requireRole('admin'), async (req, res) => {
 /**
  * PUT /api/employees/:id
  * Update employee record (Admin)
+ * Supports updating personal info, email, phone, department, designation, joining date, status, and staff ID
  */
 router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => {
+  const connection = await pool.getConnection();
   try {
-    const id = parseInt(req.params.id, 10);
-    const { firstName, lastName, phone, departmentId, designation, joiningDate, status, employeeId } = req.body;
+    await connection.beginTransaction();
 
-    const [empRows] = await pool.query('SELECT * FROM employees WHERE id = ?', [id]);
+    const id = parseInt(req.params.id, 10);
+    const { firstName, lastName, email, phone, departmentId, designation, joiningDate, status, employeeId } = req.body;
+
+    const [empRows] = await connection.query('SELECT * FROM employees WHERE id = ?', [id]);
     if (empRows.length === 0) {
+      await connection.rollback();
       return res.status(404).json({ success: false, message: 'Employee not found.' });
     }
     const currentEmp = empRows[0];
 
-    // If employeeId is being modified, ensure uniqueness
-    if (employeeId && employeeId.trim() !== currentEmp.employee_id) {
-      const [dupId] = await pool.query('SELECT id FROM employees WHERE employee_id = ? AND id != ?', [employeeId.trim(), id]);
-      if (dupId.length > 0) {
-        return res.status(400).json({ success: false, message: `Employee ID '${employeeId}' is already in use by another staff member.` });
+    // Validate and check email if provided
+    let normalizedEmail = null;
+    if (email !== undefined && email !== null) {
+      normalizedEmail = email.trim().toLowerCase();
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!normalizedEmail || !emailRegex.test(normalizedEmail)) {
+        await connection.rollback();
+        return res.status(400).json({ success: false, message: 'Please provide a valid email address.' });
+      }
+
+      // Check duplicate in users table (exclude current user)
+      const [dupUser] = await connection.query(
+        'SELECT id FROM users WHERE LOWER(email) = ? AND id != ?',
+        [normalizedEmail, currentEmp.user_id]
+      );
+      if (dupUser.length > 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'An account with this email address already exists. Please choose a different email.'
+        });
+      }
+
+      // Check duplicate in employees table (exclude current employee)
+      const [dupEmp] = await connection.query(
+        'SELECT id FROM employees WHERE LOWER(email) = ? AND id != ?',
+        [normalizedEmail, id]
+      );
+      if (dupEmp.length > 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'Another employee is already registered with this email address.'
+        });
       }
     }
 
-    await pool.query(
+    // If employeeId is being modified, ensure uniqueness
+    if (employeeId && employeeId.trim() !== currentEmp.employee_id) {
+      const [dupId] = await connection.query(
+        'SELECT id FROM employees WHERE employee_id = ? AND id != ?',
+        [employeeId.trim(), id]
+      );
+      if (dupId.length > 0) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Employee ID '${employeeId}' is already in use by another staff member.`
+        });
+      }
+    }
+
+    // Update employees table
+    await connection.query(
       `UPDATE employees SET
         first_name = COALESCE(?, first_name),
         last_name = COALESCE(?, last_name),
+        email = COALESCE(?, email),
         phone = COALESCE(?, phone),
         department_id = ?,
         designation = COALESCE(?, designation),
@@ -283,6 +336,7 @@ router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => 
       [
         firstName ? firstName.trim() : null,
         lastName ? lastName.trim() : null,
+        normalizedEmail,
         phone !== undefined ? phone : null,
         departmentId ? parseInt(departmentId, 10) : null,
         designation ? designation.trim() : null,
@@ -293,13 +347,27 @@ router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => 
       ]
     );
 
-    // If status changed, sync users table status as well
+    // Sync users table: email and status
+    const userUpdates = [];
+    const userParams = [];
+    if (normalizedEmail) {
+      userUpdates.push('email = ?');
+      userParams.push(normalizedEmail);
+    }
     if (status) {
-      await pool.query('UPDATE users SET status = ? WHERE id = ?', [status, currentEmp.user_id]);
+      userUpdates.push('status = ?');
+      userParams.push(status);
+    }
+    if (userUpdates.length > 0) {
+      userParams.push(currentEmp.user_id);
+      await connection.query(
+        `UPDATE users SET ${userUpdates.join(', ')} WHERE id = ?`,
+        userParams
+      );
     }
 
     // Audit log
-    await pool.query(
+    await connection.query(
       `INSERT INTO audit_logs (admin_user_id, action_type, entity_name, entity_id, old_values, new_values, ip_address)
        VALUES (?, 'UPDATE_EMPLOYEE', 'employees', ?, ?, ?, ?)`,
       [
@@ -311,10 +379,14 @@ router.put('/:id', authenticateToken, requireRole('admin'), async (req, res) => 
       ]
     );
 
+    await connection.commit();
     return res.json({ success: true, message: 'Employee details updated successfully in database.' });
   } catch (error) {
+    await connection.rollback();
     console.error('Error updating employee:', error);
     return res.status(500).json({ success: false, message: 'Failed to update employee.' });
+  } finally {
+    connection.release();
   }
 });
 

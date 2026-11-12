@@ -244,6 +244,103 @@ export async function apiManualAttendanceAdjustment(payload) {
   });
 }
 
+// Download Helper for binary files (PDF / Excel)
+async function downloadFile(endpoint, defaultFilename = 'download') {
+  const token = getAuthToken();
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'GET',
+      headers
+    });
+  } catch (fetchErr) {
+    if (typeof window !== 'undefined' && (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1'))) {
+      const altHost = window.location.hostname === '127.0.0.1' ? '127.0.0.1' : 'localhost';
+      response = await fetch(`http://${altHost}:5000/api${endpoint}`, {
+        method: 'GET',
+        headers
+      });
+    } else {
+      throw fetchErr;
+    }
+  }
+
+  if (!response.ok) {
+    let errorMsg = 'Failed to download file.';
+    try {
+      const errJson = await response.json();
+      if (errJson && errJson.message) errorMsg = errJson.message;
+    } catch {
+      errorMsg = `Download failed with HTTP ${response.status}`;
+    }
+    throw new Error(errorMsg);
+  }
+
+  let filename = defaultFilename;
+  const disposition = response.headers.get('Content-Disposition');
+  if (disposition && disposition.includes('filename=')) {
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    if (match && match[1]) {
+      filename = match[1].trim();
+    }
+  }
+
+  const blob = await response.blob();
+  if (typeof window !== 'undefined') {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    }, 200);
+  }
+  return true;
+}
+
+export async function apiDownloadAdminAttendance(params = {}) {
+  const cleanParams = {};
+  Object.keys(params).forEach(k => {
+    if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+      cleanParams[k] = params[k];
+    }
+  });
+  const query = new URLSearchParams(cleanParams).toString();
+  const ext = (params.format || 'excel') === 'pdf' ? 'pdf' : 'xlsx';
+  return downloadFile(`/attendance/export/admin${query ? `?${query}` : ''}`, `SheWings_Attendance_Report.${ext}`);
+}
+
+export async function apiDownloadMyAttendance(params = {}) {
+  const cleanParams = {};
+  Object.keys(params).forEach(k => {
+    if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+      cleanParams[k] = params[k];
+    }
+  });
+  const query = new URLSearchParams(cleanParams).toString();
+  const ext = (params.format || 'excel') === 'pdf' ? 'pdf' : 'xlsx';
+  return downloadFile(`/attendance/export/my${query ? `?${query}` : ''}`, `SheWings_My_Attendance.${ext}`);
+}
+
+export async function apiGetMyAttendanceHistory(params = {}) {
+  const cleanParams = {};
+  Object.keys(params).forEach(k => {
+    if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+      cleanParams[k] = params[k];
+    }
+  });
+  const query = new URLSearchParams(cleanParams).toString();
+  return request(`/attendance/my-history${query ? `?${query}` : ''}`);
+}
+
 // Employees (Protected)
 export async function apiGetEmployees(params = {}) {
   const query = new URLSearchParams(params).toString();

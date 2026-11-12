@@ -6,7 +6,7 @@ import {
   Search, Filter, Download, Plus, Edit2, ShieldAlert, MapPin,
   Settings, Check, X, FileText, ChevronRight, Eye, RefreshCw, Key,
   TrendingUp, BarChart3, Building2, UserCheck, Power, Tent, Home, Briefcase, Menu,
-  Lock, EyeOff, ShieldCheck, KeyRound, AlertCircle
+  Lock, EyeOff, ShieldCheck, KeyRound, AlertCircle, XCircle
 } from 'lucide-react';
 import {
   apiGetAttendanceStats,
@@ -26,6 +26,7 @@ import {
   apiManualAttendanceAdjustment,
   apiGetMonthlyReport,
   apiChangeAdminPassword,
+  apiDownloadAdminAttendance,
   BACKEND_URL
 } from '../lib/api';
 import SelfieThumbnail from './SelfieThumbnail';
@@ -78,6 +79,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   const [editingEmp, setEditingEmp] = useState(null);
   const [editEmpForm, setEditEmpForm] = useState({});
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editEmpError, setEditEmpError] = useState('');
 
   // Employee Details Modal
   const [viewingEmp, setViewingEmp] = useState(null);
@@ -92,6 +94,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   // Leaves & WFH Approvals tab state
   const [approvalsTab, setApprovalsTab] = useState('leaves'); // 'leaves', 'wfh'
   const [leaves, setLeaves] = useState([]);
+  const [leaveCounts, setLeaveCounts] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
   const [leaveFilter, setLeaveFilter] = useState('Pending');
   const [reviewingLeave, setReviewingLeave] = useState(null);
   const [reviewNotes, setReviewNotes] = useState('');
@@ -100,9 +103,15 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   // WFH Requests state
   const [wfhRequests, setWfhRequests] = useState([]);
   const [wfhFilter, setWfhFilter] = useState('Pending');
+  const [wfhCounts, setWfhCounts] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [wfhActionMsg, setWfhActionMsg] = useState({ type: '', text: '' });
+  const [wfhLoading, setWfhLoading] = useState(false);
   const [reviewingWfh, setReviewingWfh] = useState(null);
   const [wfhReviewNotes, setWfhReviewNotes] = useState('');
   const [wfhReviewSubmitting, setWfhReviewSubmitting] = useState(false);
+
+  // Total genuinely pending requests count (Pending Leaves + Pending WFH only)
+  const totalPendingApprovals = (Number(leaveCounts?.pending) || 0) + (Number(wfhCounts?.pending) || 0);
 
   // Office settings form state (including Camp Timings)
   const [officeForm, setOfficeForm] = useState({
@@ -143,6 +152,60 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   const [manualAdjustmentModal, setManualAdjustmentModal] = useState(null);
   const [adjForm, setAdjForm] = useState({ status: 'Present', reason: '', checkInTime: '', checkOutTime: '' });
 
+  // Download Attendance Modal State (Individual or All Employees)
+  const [downloadModal, setDownloadModal] = useState(null); // { employee: record, isAll: boolean }
+  const [downloadFilter, setDownloadFilter] = useState('this_month'); // 'this_month', 'previous_month', 'custom'
+  const [downloadCustomStart, setDownloadCustomStart] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [downloadCustomEnd, setDownloadCustomEnd] = useState(() => new Date().toISOString().split('T')[0]);
+  const [downloadFormat, setDownloadFormat] = useState('excel'); // 'excel' or 'pdf'
+  const [downloadLoading, setDownloadLoading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
+  const handleOpenDownloadModal = (empRecord = null, isAll = false) => {
+    setDownloadModal({
+      employee: empRecord,
+      isAll: isAll || !empRecord
+    });
+    setDownloadFilter('this_month');
+    setDownloadFormat('excel');
+    setDownloadError('');
+  };
+
+  const handleExecuteDownload = async () => {
+    if (!downloadModal) return;
+    setDownloadLoading(true);
+    setDownloadError('');
+    try {
+      const params = {
+        format: downloadFormat,
+        filterType: downloadFilter
+      };
+      if (downloadFilter === 'custom') {
+        if (!downloadCustomStart || !downloadCustomEnd) {
+          throw new Error('Please select both Start Date and End Date for the custom range.');
+        }
+        if (downloadCustomStart > downloadCustomEnd) {
+          throw new Error('Start Date cannot be later than End Date.');
+        }
+        params.startDate = downloadCustomStart;
+        params.endDate = downloadCustomEnd;
+      }
+      if (!downloadModal.isAll && downloadModal.employee) {
+        params.employeeId = downloadModal.employee.employee_id;
+      }
+
+      await apiDownloadAdminAttendance(params);
+      setDownloadModal(null);
+    } catch (err) {
+      setDownloadError(err.message || 'Failed to download attendance report.');
+    } finally {
+      setDownloadLoading(false);
+    }
+  };
+
   const parseISTDate = (dateVal) => {
     if (!dateVal) return null;
     if (dateVal instanceof Date) return isNaN(dateVal.getTime()) ? null : dateVal;
@@ -179,6 +242,21 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
     });
   };
 
+  const formatISTDateTime = (dateVal) => {
+    if (!dateVal) return '--';
+    const d = parseISTDate(dateVal);
+    if (!d || isNaN(d.getTime())) return typeof dateVal === 'string' ? dateVal : '--';
+    return d.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
   const loadAllData = async () => {
     setLoading(true);
     setDbError('');
@@ -207,13 +285,53 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
       }
       if (empRes && empRes.success) setEmployees(empRes.employees);
       if (deptRes && deptRes.success) setDepartments(deptRes.departments);
-      if (leavesRes && leavesRes.success) setLeaves(leavesRes.leaves);
-      if (wfhRes && wfhRes.success) setWfhRequests(wfhRes.requests || []);
+      if (leavesRes && leavesRes.success) {
+        setLeaves(leavesRes.leaves || []);
+        if (leavesRes.counts) setLeaveCounts(leavesRes.counts);
+      }
+      if (wfhRes && wfhRes.success) {
+        setWfhRequests(wfhRes.requests || []);
+        if (wfhRes.counts) setWfhCounts(wfhRes.counts);
+      }
     } catch (err) {
       console.error('Error fetching admin dashboard data:', err);
       setDbError(err.message || 'Unable to connect to MySQL database service. Please verify your backend server and database connection.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadWfhData = async (targetFilter = wfhFilter) => {
+    setWfhLoading(true);
+    try {
+      const res = await apiGetAllWFH({ status: targetFilter });
+      if (res && res.success) {
+        setWfhRequests(res.requests || []);
+        if (res.counts) setWfhCounts(res.counts);
+      }
+    } catch (err) {
+      console.error('Failed to load WFH requests:', err);
+    } finally {
+      setWfhLoading(false);
+    }
+  };
+
+  const refreshLeaveAndWfhCounts = async () => {
+    try {
+      const [leavesRes, wfhRes] = await Promise.all([
+        apiGetAllLeaves({ status: leaveFilter }),
+        apiGetAllWFH({ status: wfhFilter })
+      ]);
+      if (leavesRes && leavesRes.success) {
+        setLeaves(leavesRes.leaves || []);
+        if (leavesRes.counts) setLeaveCounts(leavesRes.counts);
+      }
+      if (wfhRes && wfhRes.success) {
+        setWfhRequests(wfhRes.requests || []);
+        if (wfhRes.counts) setWfhCounts(wfhRes.counts);
+      }
+    } catch (err) {
+      console.error('Failed to refresh leave & WFH counts:', err);
     }
   };
 
@@ -293,9 +411,11 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   // Edit Employee Open
   const handleOpenEditEmp = (emp) => {
     setEditingEmp(emp);
+    setEditEmpError('');
     setEditEmpForm({
       firstName: emp.first_name,
       lastName: emp.last_name,
+      email: emp.email || '',
       phone: emp.phone || '',
       departmentId: emp.department_id || '',
       designation: emp.designation,
@@ -308,13 +428,26 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   // Save Edited Employee
   const handleSaveEditEmp = async (e) => {
     e.preventDefault();
+    setEditEmpError('');
+
+    // Frontend Email Validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const trimmedEmail = (editEmpForm.email || '').trim().toLowerCase();
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      setEditEmpError('Please enter a valid email address (e.g. employee@shewings.org).');
+      return;
+    }
+
     setEditSubmitting(true);
     try {
-      await apiUpdateEmployee(editingEmp.id, editEmpForm);
+      await apiUpdateEmployee(editingEmp.id, {
+        ...editEmpForm,
+        email: trimmedEmail
+      });
       setEditingEmp(null);
       await loadAllData();
     } catch (err) {
-      alert(err.message || 'Failed to update employee details.');
+      setEditEmpError(err.message || 'Failed to update employee details.');
     } finally {
       setEditSubmitting(false);
     }
@@ -377,11 +510,19 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   // Review Leave
   const handleReviewLeave = async (status) => {
     if (!reviewingLeave) return;
+    const leaveId = reviewingLeave.id;
     setReviewSubmitting(true);
     try {
-      await apiUpdateLeaveStatus(reviewingLeave.id, status, reviewNotes);
+      await apiUpdateLeaveStatus(leaveId, status, reviewNotes);
       setReviewingLeave(null);
       setReviewNotes('');
+      // Immediately decrement pending count
+      setLeaveCounts(prev => ({
+        ...prev,
+        pending: Math.max(0, (prev.pending || 1) - 1),
+        approved: status === 'Approved' ? (prev.approved || 0) + 1 : prev.approved,
+        rejected: status === 'Rejected' ? (prev.rejected || 0) + 1 : prev.rejected
+      }));
       await loadAllData();
     } catch (err) {
       alert(err.message || 'Failed to update leave request in database.');
@@ -393,14 +534,29 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
   // Review Work From Home (WFH) Request
   const handleReviewWfh = async (status) => {
     if (!reviewingWfh) return;
+    const reqId = reviewingWfh.id;
+    const targetEmp = reviewingWfh.first_name ? `${reviewingWfh.first_name} ${reviewingWfh.last_name}` : 'Employee';
     setWfhReviewSubmitting(true);
+    setWfhActionMsg({ type: '', text: '' });
     try {
-      await apiUpdateWFHStatus(reviewingWfh.id, status, wfhReviewNotes);
+      await apiUpdateWFHStatus(reqId, status, wfhReviewNotes);
       setReviewingWfh(null);
       setWfhReviewNotes('');
-      await loadAllData();
+      setWfhActionMsg({
+        type: 'success',
+        text: `WFH request for ${targetEmp} was marked as ${status} successfully.`
+      });
+      // Refresh WFH data and live counts immediately from database
+      await loadWfhData(wfhFilter);
+      const res = await apiGetAllWFH({ status: 'all' });
+      if (res && res.counts) {
+        setWfhCounts(res.counts);
+      }
     } catch (err) {
-      alert(err.message || 'Failed to update WFH request in database.');
+      setWfhActionMsg({
+        type: 'error',
+        text: err.message || 'Failed to update WFH request in database.'
+      });
     } finally {
       setWfhReviewSubmitting(false);
     }
@@ -854,7 +1010,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               {activeTab === 'attendance' && 'Daily Attendance Roster'}
               {activeTab === 'reports' && 'Reports & Monthly Summaries'}
               {activeTab === 'employees' && `Employee Directory (${employees.length})`}
-              {activeTab === 'leaves' && `Leave Management (${leaves.length})`}
+              {activeTab === 'leaves' && (totalPendingApprovals > 0 ? `Leave & WFH (${totalPendingApprovals} Pending)` : 'Leave & WFH Management')}
               {activeTab === 'settings' && 'Office & Geofence Settings'}
               {activeTab === 'security' && 'Security & Account Settings'}
             </div>
@@ -980,6 +1136,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                   onClick={() => {
                     setActiveTab('leaves');
                     setMobileMenuOpen(false);
+                    refreshLeaveAndWfhCounts();
                   }}
                   className={`w-full p-3 rounded-xl text-left text-xs font-semibold flex items-center justify-between transition ${
                     activeTab === 'leaves'
@@ -991,9 +1148,9 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     <FileText className="w-4 h-4 text-amber-400" />
                     <span>Leave & WFH Approvals</span>
                   </div>
-                  {leaves.filter(l => l.status === 'Pending').length + wfhRequests.filter(w => w.status === 'Pending').length > 0 && (
+                  {totalPendingApprovals > 0 && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold">
-                      {leaves.filter(l => l.status === 'Pending').length + wfhRequests.filter(w => w.status === 'Pending').length} Pending
+                      {totalPendingApprovals} Pending
                     </span>
                   )}
                 </button>
@@ -1105,21 +1262,22 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('leaves')}
+          onClick={() => {
+            setActiveTab('leaves');
+            refreshLeaveAndWfhCounts();
+          }}
           className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap min-h-[38px] flex items-center justify-center gap-1.5 ${
             activeTab === 'leaves'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
               : 'text-slate-400 hover:text-white hover:bg-slate-800'
           }`}
         >
-          <span>Leave Management</span>
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition ${
-            activeTab === 'leaves'
-              ? 'bg-white/25 text-white ring-1 ring-white/30'
-              : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-          }`}>
-            {leaves.length}
-          </span>
+          <span>Leave & WFH</span>
+          {totalPendingApprovals > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold">
+              {totalPendingApprovals}
+            </span>
+          )}
         </button>
         <button
           type="button"
@@ -1206,62 +1364,66 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
             </div>
           )}
 
-          {/* Filters Bar */}
-          <div className="p-3.5 sm:p-5 border-b border-slate-800 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 sm:gap-4">
-            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-3">
-              {/* Date Filter */}
-              <div className="flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 text-xs min-h-[38px]">
-                <Calendar className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="bg-transparent text-white focus:outline-none text-xs font-mono w-full"
-                />
+          {/* Filters & Actions Bar */}
+          <div className="p-3.5 sm:p-5 border-b border-slate-800 space-y-3 sm:space-y-3.5">
+            {/* Row 1: Filters & Search */}
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              {/* Dropdown Filters */}
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 flex-1">
+                {/* Date Filter */}
+                <div className="flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 text-xs min-h-[38px]">
+                  <Calendar className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                  <input
+                    type="date"
+                    value={filterDate}
+                    onChange={(e) => setFilterDate(e.target.value)}
+                    className="bg-transparent text-white focus:outline-none text-xs font-mono"
+                  />
+                </div>
+
+                {/* Attendance Mode Filter */}
+                <select
+                  value={filterMode}
+                  onChange={(e) => setFilterMode(e.target.value)}
+                  className="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none min-h-[38px]"
+                >
+                  <option value="all">All Modes (Office, WFH, Camp)</option>
+                  <option value="OFFICE">Office Attendance</option>
+                  <option value="WFH">Work From Home (WFH)</option>
+                  <option value="CAMP">Camp Attendance</option>
+                </select>
+
+                {/* Status Filter */}
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none min-h-[38px]"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="Present">Present (On-Time)</option>
+                  <option value="Late">Late Arrival</option>
+                  <option value="Absent">Absent</option>
+                  <option value="On Leave">On Leave</option>
+                  <option value="Weekly Off">Weekly Off (Sunday)</option>
+                </select>
+
+                {/* Department Filter */}
+                <select
+                  value={filterDept}
+                  onChange={(e) => setFilterDept(e.target.value)}
+                  className="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none min-h-[38px]"
+                >
+                  <option value="all">All Departments</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              {/* Attendance Mode Filter */}
-              <select
-                value={filterMode}
-                onChange={(e) => setFilterMode(e.target.value)}
-                className="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none min-h-[38px]"
-              >
-                <option value="all">All Modes (Office, WFH, Camp)</option>
-                <option value="OFFICE">Office Attendance</option>
-                <option value="WFH">Work From Home (WFH)</option>
-                <option value="CAMP">Camp Attendance</option>
-              </select>
-
-              {/* Status Filter */}
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none min-h-[38px]"
-              >
-                <option value="all">All Statuses</option>
-                <option value="Present">Present (On-Time)</option>
-                <option value="Late">Late Arrival</option>
-                <option value="Absent">Absent</option>
-                <option value="On Leave">On Leave</option>
-                <option value="Weekly Off">Weekly Off (Sunday)</option>
-              </select>
-
-              {/* Department Filter */}
-              <select
-                value={filterDept}
-                onChange={(e) => setFilterDept(e.target.value)}
-                className="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none min-h-[38px]"
-              >
-                <option value="all">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-
               {/* Search Bar */}
-              <form onSubmit={handleSearchSubmit} className="flex-1 sm:flex-none">
+              <form onSubmit={handleSearchSubmit} className="w-full lg:w-64 flex-shrink-0">
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
                   <input
@@ -1269,21 +1431,45 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     placeholder="Search staff or ID..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full sm:w-52 py-2 pl-8 pr-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[38px]"
+                    className="w-full py-2 pl-8 pr-3 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[38px]"
                   />
                 </div>
               </form>
             </div>
 
-            {/* Export CSV */}
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition min-h-[38px]"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
-            </button>
+            {/* Row 2: Roster Summary Note & Download Actions */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-800/60">
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400">
+                <span className="font-semibold text-slate-300">Roster Reports:</span>
+                <span>Download consolidated official reports (Excel/PDF) or export filtered roster (CSV)</span>
+              </div>
+
+              {/* Attendance Actions: Consolidated Download & CSV Export */}
+              <div className="flex flex-row items-center justify-end gap-2 sm:gap-2.5 w-full sm:w-auto flex-nowrap flex-shrink-0">
+                {/* Download All Staff Attendance (PDF / Excel) */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenDownloadModal(null, true)}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-blue-600/25 transition min-h-[38px] whitespace-nowrap active:scale-[0.98] cursor-pointer"
+                  title="Download consolidated attendance report for all staff members (Excel / PDF)"
+                >
+                  <Download className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="hidden sm:inline">Download All Attendance</span>
+                  <span className="sm:hidden">Download All</span>
+                </button>
+
+                {/* Export CSV */}
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 hover:border-slate-600 text-xs font-semibold shadow-sm transition min-h-[38px] whitespace-nowrap active:scale-[0.98] cursor-pointer"
+                  title="Export current filtered roster as CSV"
+                >
+                  <FileText className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Table */}
@@ -1311,7 +1497,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     <th className="py-3.5 px-4">Duration</th>
                     <th className="py-3.5 px-4">Location / Geofence</th>
                     <th className="py-3.5 px-4">Status</th>
-                    <th className="py-3.5 px-4">Selfies</th>
+                    <th className="py-3.5 px-4">Selfie / Photo</th>
                     <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1436,7 +1622,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                             <SelfieThumbnail
                               src={record.check_in_selfie}
                               alt="Check-in selfie"
-                              className="w-7 h-7"
+                              className="w-8 h-8 rounded-xl cursor-pointer"
                               onClick={() =>
                                 setSelectedSelfie({
                                   url: record.check_in_selfie.startsWith('http')
@@ -1456,7 +1642,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                             <SelfieThumbnail
                               src={record.check_out_selfie}
                               alt="Check-out selfie"
-                              className="w-7 h-7"
+                              className="w-8 h-8 rounded-xl cursor-pointer"
                               onClick={() =>
                                 setSelectedSelfie({
                                   url: record.check_out_selfie.startsWith('http')
@@ -1473,27 +1659,38 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                             />
                           ) : null}
                           {!record.check_in_selfie && !record.check_out_selfie && (
-                            <span className="text-slate-600 text-xs">None</span>
+                            <span className="text-slate-500 text-xs italic">No Photo</span>
                           )}
                         </div>
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setManualAdjustmentModal(record);
-                            setAdjForm({
-                              status: record.status || 'Present',
-                              reason: record.correction_reason || '',
-                              checkInTime: record.check_in_time || '',
-                              checkOutTime: record.check_out_time || ''
-                            });
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-blue-600 text-slate-700 dark:text-slate-300 hover:text-white border border-slate-200 dark:border-transparent text-xs font-medium transition shadow-sm"
-                        >
-                          Adjust
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenDownloadModal(record, false)}
+                            className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 text-xs font-semibold transition shadow-sm flex items-center gap-1"
+                            title={`Download attendance report for ${record.first_name} ${record.last_name}`}
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>Download</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setManualAdjustmentModal(record);
+                              setAdjForm({
+                                status: record.status || 'Present',
+                                reason: record.correction_reason || '',
+                                checkInTime: record.check_in_time || '',
+                                checkOutTime: record.check_out_time || ''
+                              });
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-transparent text-xs font-medium transition shadow-sm"
+                          >
+                            Adjust
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1897,167 +2094,440 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               <button
                 type="button"
                 onClick={() => setApprovalsTab('leaves')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition min-h-[36px] ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition min-h-[36px] flex items-center gap-1.5 ${
                   approvalsTab === 'leaves'
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
                     : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                Staff Leaves ({leaves.length})
+                <FileText className="w-3.5 h-3.5 text-blue-400" />
+                <span>Staff Leaves</span>
+                {leaveCounts.pending > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[10px] font-bold">
+                    {leaveCounts.pending} Pending
+                  </span>
+                )}
               </button>
               <button
                 type="button"
-                onClick={() => setApprovalsTab('wfh')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition min-h-[36px] ${
+                onClick={() => {
+                  setApprovalsTab('wfh');
+                  loadWfhData(wfhFilter);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition min-h-[36px] flex items-center gap-1.5 ${
                   approvalsTab === 'wfh'
                     ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
                     : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                Work From Home (WFH) ({wfhRequests.length})
+                <Home className="w-3.5 h-3.5 text-purple-300" />
+                <span>Work From Home</span>
+                {wfhCounts.pending > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[10px] font-bold">
+                    {wfhCounts.pending} Pending
+                  </span>
+                )}
               </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              {['Pending', 'Approved', 'Rejected', 'all'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => approvalsTab === 'leaves' ? setLeaveFilter(st) : setWfhFilter(st)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize transition min-h-[32px] ${
-                    (approvalsTab === 'leaves' ? leaveFilter === st : wfhFilter === st)
-                      ? (approvalsTab === 'leaves' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30' : 'bg-purple-600 text-white shadow-md shadow-purple-600/30')
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+              {approvalsTab === 'leaves' ? (
+                [
+                  { id: 'Pending', label: `Pending (${leaveCounts.pending})` },
+                  { id: 'Approved', label: `Approved (${leaveCounts.approved})` },
+                  { id: 'Rejected', label: `Rejected (${leaveCounts.rejected})` },
+                  { id: 'all', label: `All Leaves (${leaveCounts.total})` }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setLeaveFilter(item.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize transition min-h-[32px] ${
+                      leaveFilter.toLowerCase() === item.id.toLowerCase()
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))
+              ) : (
+                [
+                  { id: 'Pending', label: `Pending (${wfhCounts.pending})` },
+                  { id: 'Approved', label: `Approved (${wfhCounts.approved})` },
+                  { id: 'Rejected', label: `Rejected (${wfhCounts.rejected})` },
+                  { id: 'all', label: `All Requests (${wfhCounts.total})` }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setWfhFilter(item.id);
+                      loadWfhData(item.id);
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize transition min-h-[32px] ${
+                      wfhFilter.toLowerCase() === item.id.toLowerCase()
+                        ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                        : 'bg-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
+          {/* Action Message Banner */}
+          {wfhActionMsg.text && approvalsTab === 'wfh' && (
+            <div className={`p-3.5 m-4 sm:m-5 rounded-2xl text-xs font-medium border flex items-center justify-between gap-3 shadow-lg ${
+              wfhActionMsg.type === 'success'
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                : 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+            }`}>
+              <div className="flex items-center gap-2">
+                {wfhActionMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                ) : (
+                  <ShieldAlert className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                )}
+                <span>{wfhActionMsg.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWfhActionMsg({ type: '', text: '' })}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {approvalsTab === 'leaves' ? (
-            leaves.length === 0 ? (
-              <div className="p-8 sm:p-12 text-center text-slate-400 text-sm">
-                No leave requests found for status: {leaveFilter}.
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-800/60">
-                {leaves.map((l) => (
-                  <div key={l.id} className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4 hover:bg-slate-800/20 transition">
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-white text-sm">
-                          {l.first_name} {l.last_name}
-                        </span>
-                        <span className="text-xs font-mono text-blue-400">({l.emp_code})</span>
-                        <span className="text-xs text-slate-400">• {l.department_name}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                            l.status === 'Approved'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                              : l.status === 'Rejected'
-                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                          }`}
-                        >
-                          {l.status}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-300">
-                        <span className="font-semibold text-blue-300">{l.leave_type} Leave</span> from{' '}
-                        <span className="font-mono text-white">{l.start_date ? l.start_date.split('T')[0] : ''}</span> to{' '}
-                        <span className="font-mono text-white">{l.end_date ? l.end_date.split('T')[0] : ''}</span>
-                      </div>
-                      <div className="text-xs text-slate-400 italic">
-                        "{l.reason}"
-                      </div>
-                      {l.review_notes && (
-                        <div className="text-[11px] text-slate-500">
-                          Admin Note: {l.review_notes}
-                        </div>
-                      )}
-                    </div>
+            (() => {
+              const filteredLeaveRequests = (leaves || []).filter((l) => {
+                const norm = (l.status || '').trim().toLowerCase();
+                const filter = (leaveFilter || '').trim().toLowerCase();
+                if (!filter || filter === 'all') return true;
+                return norm === filter;
+              });
 
-                    {l.status === 'Pending' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReviewingLeave(l);
-                          setReviewNotes('');
-                        }}
-                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/30 transition min-h-[40px]"
-                      >
-                        Review Application
-                      </button>
-                    )}
+              if (filteredLeaveRequests.length === 0) {
+                return (
+                  <div className="p-8 sm:p-12 text-center text-slate-400 text-sm">
+                    No leave requests found for status: {leaveFilter}.
                   </div>
-                ))}
-              </div>
-            )
+                );
+              }
+
+              return (
+                <div className="divide-y divide-slate-800/60">
+                  {filteredLeaveRequests.map((l) => {
+                    const normStatus = (l.status || '').trim().toLowerCase();
+                    const isApproved = normStatus === 'approved';
+                    const isRejected = normStatus === 'rejected';
+                    const isPending = normStatus === 'pending';
+                    const reviewerDisplay = l.reviewer_name || l.reviewer_email || 'Administrator';
+
+                    return (
+                      <div key={l.id} className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-slate-800/20 transition">
+                        <div className="space-y-2 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-white text-sm sm:text-base">
+                              {l.first_name} {l.last_name}
+                            </span>
+                            <span className="text-xs font-mono text-blue-400 font-semibold px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20">
+                              {l.emp_code}
+                            </span>
+                            <span className="text-xs text-slate-400">• {l.department_name || 'General Department'}</span>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                isApproved
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : isRejected
+                                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+                              }`}
+                            >
+                              {l.status}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-slate-300 bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/60">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                              <span className="text-slate-400">{l.leave_type} Leave:</span>
+                              <span className="font-mono text-white font-bold">
+                                {l.start_date ? l.start_date.split('T')[0] : ''} to {l.end_date ? l.end_date.split('T')[0] : ''}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 text-slate-400">
+                              <Clock className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <span>Applied:</span>
+                              <span className="font-mono text-slate-300">
+                                {formatISTDateTime(l.created_at)}
+                              </span>
+                            </div>
+
+                            {l.reviewed_at && (
+                              <div className="flex items-center gap-1.5">
+                                <CheckCircle2 className={`w-3.5 h-3.5 flex-shrink-0 ${isApproved ? 'text-emerald-400' : 'text-rose-400'}`} />
+                                <span className="text-slate-400">{isApproved ? 'Approval Date:' : 'Decision Date:'}</span>
+                                <span className="font-mono text-white font-semibold">
+                                  {formatISTDateTime(l.reviewed_at)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {isApproved && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-300 bg-emerald-950/20 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                              <span className="text-slate-400">Approved By:</span>
+                              <span className="font-semibold text-emerald-200">
+                                {reviewerDisplay}
+                              </span>
+                              {l.reviewed_at && (
+                                <span className="text-slate-400 text-[11px]">
+                                  on {formatISTDateTime(l.reviewed_at)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {isRejected && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-rose-300 bg-rose-950/20 px-3 py-1.5 rounded-xl border border-rose-500/20">
+                              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+                              <span className="text-slate-400">Rejected By:</span>
+                              <span className="font-semibold text-rose-200">
+                                {reviewerDisplay}
+                              </span>
+                              {l.reviewed_at && (
+                                <span className="text-slate-400 text-[11px]">
+                                  on {formatISTDateTime(l.reviewed_at)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                            <span className="text-slate-400 font-semibold block text-[11px] mb-0.5">Leave Reason:</span>
+                            <span className="italic text-slate-200">"{l.reason}"</span>
+                          </div>
+
+                          {l.review_notes && (
+                            <div className="text-[11px] text-slate-400 bg-slate-950/30 px-2.5 py-1.5 rounded-lg border border-slate-800/50">
+                              <span className="font-semibold text-slate-300">Admin Note:</span> "{l.review_notes}"
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto mt-2 md:mt-0 flex-shrink-0">
+                          {isPending ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReviewingLeave(l);
+                                setReviewNotes('');
+                              }}
+                              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md shadow-blue-600/30 transition min-h-[40px]"
+                            >
+                              Review Application
+                            </button>
+                          ) : isApproved ? (
+                            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>Approved</span>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold">
+                              <XCircle className="w-4 h-4" />
+                              <span>Rejected</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
           ) : (
-            wfhRequests.length === 0 ? (
-              <div className="p-8 sm:p-12 text-center text-slate-400 text-sm">
-                No Work From Home requests found for status: {wfhFilter}.
+            wfhLoading ? (
+              <div className="p-8 sm:p-12 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                <span>Loading {wfhFilter.toLowerCase() === 'all' ? 'all' : wfhFilter} Work From Home requests...</span>
               </div>
-            ) : (
-              <div className="divide-y divide-slate-800/60">
-                {wfhRequests.map((req) => (
-                  <div key={req.id} className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4 hover:bg-slate-800/20 transition">
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-white text-sm">
-                          {req.first_name} {req.last_name}
-                        </span>
-                        <span className="text-xs font-mono text-purple-400">({req.emp_code})</span>
-                        <span className="text-xs text-slate-400">• {req.department_name}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
-                            req.status === 'Approved'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                              : req.status === 'Rejected'
-                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                          }`}
-                        >
-                          {req.status}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-300">
-                        <span className="font-semibold text-purple-300">WFH Date(s):</span>{' '}
-                        <span className="font-mono text-white font-bold">
-                          {req.start_date ? (
-                            req.start_date.split('T')[0] === (req.end_date ? req.end_date.split('T')[0] : '')
-                              ? req.start_date.split('T')[0]
-                              : `${req.start_date.split('T')[0]} to ${req.end_date.split('T')[0]}`
-                          ) : ''}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-400 italic">
-                        "{req.reason}"
-                      </div>
-                      {req.review_notes && (
-                        <div className="text-[11px] text-slate-500">
-                          Admin Note: {req.review_notes}
-                        </div>
-                      )}
-                    </div>
+            ) : (() => {
+              const filteredWfhRequests = (wfhRequests || []).filter((req) => {
+                const norm = (req.status || '').trim().toLowerCase();
+                const filter = (wfhFilter || '').trim().toLowerCase();
+                if (!filter || filter === 'all') return true;
+                return norm === filter;
+              });
 
-                    {req.status === 'Pending' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReviewingWfh(req);
-                          setWfhReviewNotes('');
-                        }}
-                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/30 transition min-h-[40px]"
-                      >
-                        Review WFH Request
-                      </button>
-                    )}
+              if (filteredWfhRequests.length === 0) {
+                return (
+                  <div className="p-8 sm:p-12 text-center text-slate-400 text-sm space-y-2">
+                    <Home className="w-8 h-8 text-purple-400/50 mx-auto mb-2" />
+                    <div className="font-semibold text-slate-300">
+                      {wfhFilter.toLowerCase() === 'pending'
+                        ? 'No pending Work From Home requests.'
+                        : wfhFilter.toLowerCase() === 'approved'
+                        ? 'No approved Work From Home requests found.'
+                        : wfhFilter.toLowerCase() === 'rejected'
+                        ? 'No rejected Work From Home requests found.'
+                        : 'No Work From Home requests found.'}
+                    </div>
                   </div>
-                ))}
-              </div>
-            )
+                );
+              }
+
+              return (
+                <div className="divide-y divide-slate-800/60">
+                  {filteredWfhRequests.map((req) => {
+                    const startStr = req.start_date ? req.start_date.split('T')[0] : '';
+                    const endStr = req.end_date ? req.end_date.split('T')[0] : '';
+                    const isSingleDay = !endStr || startStr === endStr;
+                    const normStatus = (req.status || '').trim().toLowerCase();
+                    const isApproved = normStatus === 'approved';
+                    const isRejected = normStatus === 'rejected';
+                    const isPending = normStatus === 'pending';
+                    const reviewerDisplay = req.reviewer_name || req.reviewer_email || 'Administrator';
+
+                    return (
+                      <div
+                        key={req.id}
+                        className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-slate-800/20 transition"
+                      >
+                        <div className="space-y-2 flex-1 min-w-0">
+                          {/* 1. Employee Name, Staff ID, Department & Status Badge */}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-white text-sm sm:text-base">
+                              {req.first_name} {req.last_name}
+                            </span>
+                            <span className="text-xs font-mono text-purple-400 font-semibold px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20">
+                              {req.emp_code}
+                            </span>
+                            <span className="text-xs text-slate-400">• {req.department_name || 'General Department'}</span>
+                            <span
+                              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                                isApproved
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                  : isRejected
+                                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30 animate-pulse'
+                              }`}
+                            >
+                              {req.status}
+                            </span>
+                          </div>
+
+                          {/* 2. Metadata: WFH Date Range, Submission Date & Approval Date */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs text-slate-300 bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/60">
+                            <div className="flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                              <span className="text-slate-400">WFH Date:</span>
+                              <span className="font-mono text-white font-bold">
+                                {isSingleDay ? startStr : `${startStr} to ${endStr}`}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 text-slate-400">
+                              <Clock className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                              <span>Submitted:</span>
+                              <span className="font-mono text-slate-300">
+                                {formatISTDateTime(req.created_at)}
+                              </span>
+                            </div>
+
+                            {req.reviewed_at && (
+                              <div className="flex items-center gap-1.5">
+                                <CheckCircle2 className={`w-3.5 h-3.5 flex-shrink-0 ${isApproved ? 'text-emerald-400' : 'text-rose-400'}`} />
+                                <span className="text-slate-400">{isApproved ? 'Approval Date:' : 'Decision Date:'}</span>
+                                <span className="font-mono text-white font-semibold">
+                                  {formatISTDateTime(req.reviewed_at)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 3. Approved By / Rejected By Info Banner */}
+                          {isApproved && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-emerald-300 bg-emerald-950/20 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                              <span className="text-slate-400">Approved By:</span>
+                              <span className="font-semibold text-emerald-200">
+                                {reviewerDisplay}
+                              </span>
+                              {req.reviewed_at && (
+                                <span className="text-slate-400 text-[11px]">
+                                  on {formatISTDateTime(req.reviewed_at)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {isRejected && (
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-rose-300 bg-rose-950/20 px-3 py-1.5 rounded-xl border border-rose-500/20">
+                              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+                              <span className="text-slate-400">Rejected By:</span>
+                              <span className="font-semibold text-rose-200">
+                                {reviewerDisplay}
+                              </span>
+                              {req.reviewed_at && (
+                                <span className="text-slate-400 text-[11px]">
+                                  on {formatISTDateTime(req.reviewed_at)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* 4. Request Reason */}
+                          <div className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                            <span className="text-slate-400 font-semibold block text-[11px] mb-0.5">Request Reason:</span>
+                            <span className="italic text-slate-200">"{req.reason}"</span>
+                          </div>
+
+                          {/* 5. Review Notes if any */}
+                          {req.review_notes && (
+                            <div className="text-[11px] text-slate-400 bg-slate-950/30 px-2.5 py-1.5 rounded-lg border border-slate-800/50">
+                              <span className="font-semibold text-slate-300">Admin Review Note:</span> "{req.review_notes}"
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Right Action Button / Status Badge */}
+                        <div className="flex items-center gap-2 w-full sm:w-auto mt-2 md:mt-0 flex-shrink-0">
+                          {isPending ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReviewingWfh(req);
+                                setWfhReviewNotes('');
+                              }}
+                              className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/30 transition min-h-[38px] flex items-center justify-center gap-1.5"
+                            >
+                              <Home className="w-3.5 h-3.5" />
+                              <span>Review & Decide</span>
+                            </button>
+                          ) : isApproved ? (
+                            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>Approved</span>
+                            </div>
+                          ) : (
+                            <div className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold">
+                              <XCircle className="w-4 h-4" />
+                              <span>Rejected</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()
           )}
         </div>
       )}
@@ -2065,26 +2535,6 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
       {/* Tab 4: Office & Geofence Settings */}
       {activeTab === 'settings' && (
         <div className="space-y-6">
-          {/* Settings Sub-navigation Bar */}
-          <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 w-fit">
-            <button
-              type="button"
-              onClick={() => setActiveTab('settings')}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/25 flex items-center gap-1.5"
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Office & Geofence Settings</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('security')}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition flex items-center gap-1.5"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-              <span>Security & Account Settings</span>
-            </button>
-          </div>
-
           <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-4 sm:p-8 shadow-2xl">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 sm:pb-6 border-b border-slate-800 mb-6">
             <div>
@@ -2397,52 +2847,32 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
       {/* Tab 5: Administrator Security & Account Settings */}
       {activeTab === 'security' && (
         <div className="space-y-6">
-          {/* Settings Sub-navigation Bar */}
-          <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-slate-900/90 border border-slate-800 w-fit">
-            <button
-              type="button"
-              onClick={() => setActiveTab('settings')}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition flex items-center gap-1.5"
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Office & Geofence Settings</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('security')}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/25 flex items-center gap-1.5"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-amber-300" />
-              <span>Security & Account Settings</span>
-            </button>
-          </div>
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Main Card: Change Admin Password */}
             <div className="lg:col-span-2 rounded-3xl bg-slate-900/90 border border-slate-800 p-5 sm:p-8 shadow-2xl space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-slate-200 dark:border-slate-800">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500/20 to-blue-500/20 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
-                    <KeyRound className="w-5 h-5 text-amber-400" />
+                    <KeyRound className="w-5 h-5 text-amber-500 dark:text-amber-400" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-base sm:text-lg">Change Administrator Password</h3>
-                    <p className="text-xs text-slate-400">
+                    <h3 className="font-bold text-slate-900 dark:text-white text-base sm:text-lg">Change Administrator Password</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
                       Update master administrator credentials securely. Hashed with Bcrypt (10 salt rounds) and committed to TiDB Cloud.
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-semibold w-fit">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-600 dark:text-blue-300 text-xs font-semibold w-fit">
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
                   <span>Admin Session Active</span>
                 </div>
               </div>
 
               {/* Success Alert */}
               {adminPwMsg.type === 'success' && (
-                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
                   <div className="flex items-center gap-2.5">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                     <div>
                       <span className="font-bold">Success: </span>
                       <span>{adminPwMsg.text}</span>
@@ -2451,7 +2881,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                   <button
                     type="button"
                     onClick={() => setAdminPwMsg({ type: '', text: '' })}
-                    className="p-1 rounded-lg text-emerald-400 hover:text-white hover:bg-emerald-500/20"
+                    className="p-1 rounded-lg text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-white hover:bg-emerald-500/20"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2460,9 +2890,9 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
 
               {/* Error Alert */}
               {adminPwMsg.type === 'error' && (
-                <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
+                <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs sm:text-sm flex items-start justify-between gap-3 shadow-lg animate-fadeIn">
                   <div className="flex items-center gap-2.5">
-                    <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0" />
+                    <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 flex-shrink-0" />
                     <div>
                       <span className="font-bold">Error: </span>
                       <span>{adminPwMsg.text}</span>
@@ -2471,7 +2901,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                   <button
                     type="button"
                     onClick={() => setAdminPwMsg({ type: '', text: '' })}
-                    className="p-1 rounded-lg text-rose-400 hover:text-white hover:bg-rose-500/20"
+                    className="p-1 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-900 dark:hover:text-white hover:bg-rose-500/20"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -2481,8 +2911,8 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               <form onSubmit={handleChangeAdminPassword} className="space-y-5 text-xs">
                 {/* Current Password */}
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1.5">
-                    Current Password <span className="text-rose-400">*</span>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5">
+                    Current Password <span className="text-rose-500 dark:text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -2492,12 +2922,12 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                       placeholder="Enter your current administrator password"
                       value={adminPwForm.currentPassword}
                       onChange={(e) => setAdminPwForm({ ...adminPwForm, currentPassword: e.target.value })}
-                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[42px]"
+                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 min-h-[42px]"
                     />
                     <button
                       type="button"
                       onClick={() => setShowCurrentPw(!showCurrentPw)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white p-1"
                       aria-label={showCurrentPw ? 'Hide password' : 'Show password'}
                     >
                       {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -2510,8 +2940,8 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
 
                 {/* New Password */}
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1.5">
-                    New Password <span className="text-rose-400">*</span>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5">
+                    New Password <span className="text-rose-500 dark:text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -2521,12 +2951,12 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                       placeholder="Enter new password (at least 6 characters)"
                       value={adminPwForm.newPassword}
                       onChange={(e) => setAdminPwForm({ ...adminPwForm, newPassword: e.target.value })}
-                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[42px]"
+                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 min-h-[42px]"
                     />
                     <button
                       type="button"
                       onClick={() => setShowNewPw(!showNewPw)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white p-1"
                       aria-label={showNewPw ? 'Hide password' : 'Show password'}
                     >
                       {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -2536,8 +2966,8 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
 
                 {/* Confirm New Password */}
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1.5">
-                    Confirm New Password <span className="text-rose-400">*</span>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5">
+                    Confirm New Password <span className="text-rose-500 dark:text-rose-400">*</span>
                   </label>
                   <div className="relative">
                     <input
@@ -2547,12 +2977,12 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                       placeholder="Re-enter your new password to confirm"
                       value={adminPwForm.confirmPassword}
                       onChange={(e) => setAdminPwForm({ ...adminPwForm, confirmPassword: e.target.value })}
-                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 min-h-[42px]"
+                      className="w-full py-2.5 pl-3.5 pr-10 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 min-h-[42px]"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPw(!showConfirmPw)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-white p-1"
                       aria-label={showConfirmPw ? 'Hide password' : 'Show password'}
                     >
                       {showConfirmPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -2561,44 +2991,44 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                 </div>
 
                 {/* Live Password Requirements Checklist */}
-                <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-2 text-[11px]">
-                  <span className="text-slate-400 font-semibold block">Password Requirements:</span>
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800/80 space-y-2 text-[11px]">
+                  <span className="text-slate-700 dark:text-slate-300 font-semibold block">Password Requirements:</span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div className="flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
                         adminPwForm.newPassword.length >= 6
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-500'
+                          ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40'
+                          : 'bg-slate-200/90 text-slate-500 border border-slate-300 dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700'
                       }`}>
                         {adminPwForm.newPassword.length >= 6 ? '✓' : '•'}
                       </span>
-                      <span className={adminPwForm.newPassword.length >= 6 ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                      <span className={adminPwForm.newPassword.length >= 6 ? 'text-emerald-700 dark:text-emerald-300 font-semibold' : 'text-slate-600 dark:text-slate-400'}>
                         Min. 6 characters
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
                         adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-500'
+                          ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40'
+                          : 'bg-slate-200/90 text-slate-500 border border-slate-300 dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700'
                       }`}>
                         {adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword ? '✓' : '•'}
                       </span>
-                      <span className={adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                      <span className={adminPwForm.newPassword && adminPwForm.currentPassword && adminPwForm.newPassword !== adminPwForm.currentPassword ? 'text-emerald-700 dark:text-emerald-300 font-semibold' : 'text-slate-600 dark:text-slate-400'}>
                         Differs from current
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                      <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
                         adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-slate-800 text-slate-500'
+                          ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/40'
+                          : 'bg-slate-200/90 text-slate-500 border border-slate-300 dark:bg-slate-800 dark:text-slate-500 dark:border-slate-700'
                       }`}>
                         {adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword ? '✓' : '•'}
                       </span>
-                      <span className={adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword ? 'text-emerald-300 font-medium' : 'text-slate-400'}>
+                      <span className={adminPwForm.newPassword && adminPwForm.confirmPassword && adminPwForm.newPassword === adminPwForm.confirmPassword ? 'text-emerald-700 dark:text-emerald-300 font-semibold' : 'text-slate-600 dark:text-slate-400'}>
                         Passwords match
                       </span>
                     </div>
@@ -2606,14 +3036,14 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                 </div>
 
                 {/* Form Buttons */}
-                <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-end gap-3">
+                <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => {
                       setAdminPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
                       setAdminPwMsg({ type: '', text: '' });
                     }}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-transparent font-semibold text-xs transition"
                   >
                     Clear Form
                   </button>
@@ -2643,55 +3073,67 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               {/* Profile Card */}
               <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-5 sm:p-6 shadow-xl space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-base shadow-lg shadow-blue-600/25">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white text-base shadow-lg shadow-blue-600/25 employee-avatar-text">
                     {user?.displayName ? user.displayName.substring(0, 2).toUpperCase() : 'AD'}
                   </div>
                   <div>
-                    <h4 className="font-bold text-white text-sm">{user?.displayName || 'Administrator'}</h4>
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-semibold border border-amber-500/30">
+                    <h4 className="font-bold text-slate-900 dark:text-white text-sm">{user?.displayName || 'Administrator'}</h4>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 text-[10px] font-semibold border border-amber-500/30">
                       Super Administrator
                     </span>
                   </div>
                 </div>
 
-                <div className="divide-y divide-slate-800/80 text-xs">
+                <div className="divide-y divide-slate-200 dark:divide-slate-800/80 text-xs">
                   <div className="py-2.5 flex justify-between">
-                    <span className="text-slate-400">Account Email:</span>
-                    <span className="text-white font-mono font-medium">{user?.email || 'admin@shewings.org'}</span>
+                    <span className="text-slate-500 dark:text-slate-400">Account Email:</span>
+                    <span className="text-slate-900 dark:text-white font-mono font-medium">{user?.email || 'admin@shewings.org'}</span>
                   </div>
                   <div className="py-2.5 flex justify-between">
-                    <span className="text-slate-400">Role Authority:</span>
-                    <span className="text-emerald-400 font-semibold">admin (Full Access)</span>
+                    <span className="text-slate-500 dark:text-slate-400">Role Authority:</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">admin (Full Access)</span>
                   </div>
                   <div className="py-2.5 flex justify-between">
-                    <span className="text-slate-400">Database Engine:</span>
-                    <span className="text-purple-300 font-semibold">TiDB Cloud (MySQL)</span>
+                    <span className="text-slate-500 dark:text-slate-400">Database Engine:</span>
+                    <span className="text-purple-600 dark:text-purple-300 font-semibold">TiDB Cloud (MySQL)</span>
                   </div>
                   <div className="py-2.5 flex justify-between">
-                    <span className="text-slate-400">Hashing Algorithm:</span>
-                    <span className="text-blue-300 font-mono font-semibold">Bcrypt (10 Rounds)</span>
+                    <span className="text-slate-500 dark:text-slate-400">Hashing Algorithm:</span>
+                    <span className="text-blue-600 dark:text-blue-300 font-mono font-semibold">Bcrypt (10 Rounds)</span>
                   </div>
                 </div>
               </div>
 
               {/* Security Policy Information */}
-              <div className="rounded-3xl bg-gradient-to-br from-slate-900/90 to-slate-950 border border-slate-800 p-5 sm:p-6 shadow-xl space-y-3">
-                <div className="flex items-center gap-2 text-white font-bold text-xs">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <div className="rounded-3xl bg-slate-900/90 border border-slate-800 p-5 sm:p-6 shadow-xl space-y-3.5">
+                <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-xs pb-2 border-b border-slate-200 dark:border-slate-800">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                   <span>Security & Isolation Guarantees</span>
                 </div>
-                <ul className="text-[11px] text-slate-300 space-y-2.5 list-disc list-inside">
-                  <li>
-                    <strong className="text-white">Strict Authorization:</strong> Employees cannot modify administrator passwords under any circumstances.
+                <ul className="text-[11px] text-slate-600 dark:text-slate-300 space-y-2.5">
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 flex-shrink-0 mt-1.5" />
+                    <span>
+                      <strong className="text-slate-900 dark:text-white font-semibold">Strict Authorization:</strong> Employees cannot modify administrator passwords under any circumstances.
+                    </span>
                   </li>
-                  <li>
-                    <strong className="text-white">Zero Plaintext:</strong> Passwords are never stored in plain text, logged to server consoles, or returned in API responses.
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 flex-shrink-0 mt-1.5" />
+                    <span>
+                      <strong className="text-slate-900 dark:text-white font-semibold">Zero Plaintext:</strong> Passwords are never stored in plain text, logged to server consoles, or returned in API responses.
+                    </span>
                   </li>
-                  <li>
-                    <strong className="text-white">Data Isolation:</strong> Password updates only modify the administrator hash and never alter employee records or attendance logs.
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 flex-shrink-0 mt-1.5" />
+                    <span>
+                      <strong className="text-slate-900 dark:text-white font-semibold">Data Isolation:</strong> Password updates only modify the administrator hash and never alter employee records or attendance logs.
+                    </span>
                   </li>
-                  <li>
-                    <strong className="text-white">Brute-Force Guard:</strong> Protected by IP rate limiting to prevent unauthorized credential guessing.
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400 flex-shrink-0 mt-1.5" />
+                    <span>
+                      <strong className="text-slate-900 dark:text-white font-semibold">Brute-Force Guard:</strong> Protected by IP rate limiting to prevent unauthorized credential guessing.
+                    </span>
                   </li>
                 </ul>
               </div>
@@ -2768,7 +3210,7 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
               <div className="flex items-center gap-2">
                 <Home className="w-5 h-5 text-purple-400 flex-shrink-0" />
-                <h4 className="text-base font-bold text-white">Review Work From Home</h4>
+                <h4 className="text-base font-bold text-white">Review Work From Home Request</h4>
               </div>
               <button
                 onClick={() => setReviewingWfh(null)}
@@ -2779,17 +3221,29 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-1.5">
-                <div className="flex justify-between">
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex justify-between items-center">
                   <span className="text-slate-400">Employee:</span>
                   <span className="font-bold text-white">{reviewingWfh.first_name} {reviewingWfh.last_name} ({reviewingWfh.emp_code})</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-slate-400">Department:</span>
-                  <span className="text-slate-200">{reviewingWfh.department_name}</span>
+                  <span className="text-slate-200">{reviewingWfh.department_name || 'General'}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">WFH Date(s):</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Current Status:</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                    reviewingWfh.status === 'Approved'
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : reviewingWfh.status === 'Rejected'
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                  }`}>
+                    {reviewingWfh.status}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">WFH Date:</span>
                   <span className="font-mono text-purple-300 font-bold">
                     {reviewingWfh.start_date ? (
                       reviewingWfh.start_date.split('T')[0] === (reviewingWfh.end_date ? reviewingWfh.end_date.split('T')[0] : '')
@@ -2798,21 +3252,37 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     ) : ''}
                   </span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Submission Date:</span>
+                  <span className="font-mono text-slate-300">
+                    {reviewingWfh.created_at
+                      ? parseISTDate(reviewingWfh.created_at)?.toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        }) || reviewingWfh.created_at
+                      : '--'}
+                  </span>
+                </div>
                 <div className="pt-2 border-t border-slate-800/80">
-                  <span className="text-slate-400 block mb-1">Reason:</span>
-                  <p className="text-slate-300 italic bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                  <span className="text-slate-400 block mb-1 font-semibold">Request Reason:</span>
+                  <p className="text-slate-300 italic bg-slate-900/80 p-2.5 rounded-xl border border-slate-800">
                     "{reviewingWfh.reason}"
                   </p>
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 font-semibold mb-1">Reviewer Note (Optional)</label>
+                <label className="block text-slate-300 font-semibold mb-1">Administrator Reviewer Note (Optional)</label>
                 <textarea
                   rows="2"
                   value={wfhReviewNotes}
                   onChange={(e) => setWfhReviewNotes(e.target.value)}
-                  placeholder="e.g. Approved for project deliverable deadline..."
+                  placeholder="e.g. Approved for specific project deliverables / Not feasible..."
                   className="w-full py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500"
                 />
               </div>
@@ -2822,19 +3292,31 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                   type="button"
                   disabled={wfhReviewSubmitting}
                   onClick={() => handleReviewWfh('Rejected')}
-                  className="w-full sm:flex-1 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-300 hover:text-white font-bold transition flex items-center justify-center gap-1.5 min-h-[42px]"
+                  className="w-full sm:flex-1 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 border border-rose-500/40 text-rose-300 hover:text-white font-bold transition flex items-center justify-center gap-1.5 min-h-[42px] disabled:opacity-50"
                 >
-                  <X className="w-4 h-4" />
-                  <span>Reject</span>
+                  {wfhReviewSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <X className="w-4 h-4" />
+                      <span>Reject Request</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
                   disabled={wfhReviewSubmitting}
                   onClick={() => handleReviewWfh('Approved')}
-                  className="w-full sm:flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 min-h-[42px]"
+                  className="w-full sm:flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-1.5 min-h-[42px] disabled:opacity-50"
                 >
-                  <Check className="w-4 h-4" />
-                  <span>Approve WFH</span>
+                  {wfhReviewSubmitting ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Approve WFH</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -3010,6 +3492,15 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
               </button>
             </div>
 
+            {editEmpError && (
+              <div className="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-2">
+                <span>{editEmpError}</span>
+                <button type="button" onClick={() => setEditEmpError('')} className="p-0.5 text-rose-400 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSaveEditEmp} className="mt-4 space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -3032,6 +3523,21 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                     className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-blue-500 min-h-[40px]"
                   />
                 </div>
+              </div>
+
+              {/* Email Address */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Email Address <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="employee@shewings.org"
+                  value={editEmpForm.email || ''}
+                  onChange={(e) => setEditEmpForm({ ...editEmpForm, email: e.target.value })}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-950 border border-slate-800 text-white focus:outline-none focus:border-blue-500 min-h-[40px]"
+                />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3409,6 +3915,204 @@ export default function AdminDashboard({ user, officeSettings, onOfficeSettingsU
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Download Staff Attendance (PDF / Excel) */}
+      {downloadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
+          <div className="relative max-w-lg w-full rounded-2xl sm:rounded-3xl bg-slate-900 border border-slate-700 p-5 sm:p-7 shadow-2xl space-y-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-base sm:text-lg font-bold text-white">
+                    {downloadModal.isAll ? 'Download All Staff Attendance' : 'Download Staff Attendance'}
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {downloadModal.isAll ? (
+                      'Consolidated report for all active employees'
+                    ) : (
+                      <span>
+                        <strong className="text-slate-200">{downloadModal.employee?.first_name} {downloadModal.employee?.last_name}</strong>
+                        {' '}({downloadModal.employee?.emp_code}) • {downloadModal.employee?.designation}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDownloadModal(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {downloadError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{downloadError}</span>
+              </div>
+            )}
+
+            {/* 1. Date Filter Selection */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-2">
+                1. Select Date Range
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDownloadFilter('this_month')}
+                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition border min-h-[38px] ${
+                    downloadFilter === 'this_month'
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  This Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDownloadFilter('previous_month')}
+                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition border min-h-[38px] ${
+                    downloadFilter === 'previous_month'
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  Previous Month
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDownloadFilter('custom')}
+                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition border min-h-[38px] ${
+                    downloadFilter === 'custom'
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-600/30'
+                      : 'bg-slate-950/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
+                  }`}
+                >
+                  Custom Range
+                </button>
+              </div>
+
+              {/* Custom Date Pickers */}
+              {downloadFilter === 'custom' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={downloadCustomStart}
+                      onChange={(e) => setDownloadCustomStart(e.target.value)}
+                      className="w-full py-2 px-3 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={downloadCustomEnd}
+                      onChange={(e) => setDownloadCustomEnd(e.target.value)}
+                      className="w-full py-2 px-3 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Format Selection */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-2">
+                2. Select Export Format
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDownloadFormat('excel')}
+                  className={`p-3 rounded-xl text-left border transition flex items-center gap-3 ${
+                    downloadFormat === 'excel'
+                      ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/30'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg border ${
+                    downloadFormat === 'excel'
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-white">Excel Spreadsheet</div>
+                    <div className="text-[10px] text-slate-400">.xlsx with KPI totals</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDownloadFormat('pdf')}
+                  className={`p-3 rounded-xl text-left border transition flex items-center gap-3 ${
+                    downloadFormat === 'pdf'
+                      ? 'bg-blue-950/40 border-blue-500 ring-2 ring-blue-500/30'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg border ${
+                    downloadFormat === 'pdf'
+                      ? 'bg-blue-500/20 text-blue-400 border-blue-500/40'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs text-white">PDF Document</div>
+                    <div className="text-[10px] text-slate-400">Printable official sheet</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Included Fields Notice */}
+            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
+              <span className="font-semibold text-slate-300">Report details: </span>
+              Includes Staff Name, ID, Date, Day, Attendance Type (Office / WFH / Camp), Status (Present, Late, Absent, On Leave, Weekly Off), Check-In, Check-Out, and Working Hours.
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-3 border-t border-slate-800 flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDownloadModal(null)}
+                disabled={downloadLoading}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 font-semibold text-xs min-h-[40px] hover:bg-slate-800 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteDownload}
+                disabled={downloadLoading}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition min-h-[40px] flex items-center justify-center gap-2"
+              >
+                {downloadLoading ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Generating Report...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download {downloadFormat === 'pdf' ? 'PDF' : 'Excel'}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

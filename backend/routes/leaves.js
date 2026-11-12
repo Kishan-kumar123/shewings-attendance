@@ -100,29 +100,51 @@ router.get('/my', authenticateToken, async (req, res) => {
  */
 router.get('/all', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
-    const { status } = req.query;
+    const rawStatus = req.query.status;
+    const status = rawStatus !== undefined && rawStatus !== null ? String(rawStatus).trim() : '';
+
+    // Fetch aggregate status counts across all leave requests (case- and whitespace-insensitive)
+    const [[countRow]] = await pool.query(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'approved' THEN 1 ELSE 0 END) as approved,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'rejected' THEN 1 ELSE 0 END) as rejected
+      FROM leave_requests
+    `);
+
+    const counts = {
+      total: Number(countRow?.total) || 0,
+      pending: Number(countRow?.pending) || 0,
+      approved: Number(countRow?.approved) || 0,
+      rejected: Number(countRow?.rejected) || 0
+    };
 
     let query = `
       SELECT lr.*,
              e.employee_id as emp_code, e.first_name, e.last_name,
-             d.name as department_name, u.email as employee_email
+             d.name as department_name, u.email as employee_email,
+             reviewer.email as reviewer_email,
+             COALESCE(CONCAT(reviewer_emp.first_name, ' ', reviewer_emp.last_name), reviewer.email, 'Administrator') as reviewer_name
       FROM leave_requests lr
-      JOIN employees e ON e.id = lr.employee_id
-      JOIN users u ON u.id = e.user_id
+      LEFT JOIN employees e ON e.id = lr.employee_id
+      LEFT JOIN users u ON u.id = e.user_id
+      LEFT JOIN users reviewer ON reviewer.id = lr.reviewed_by
+      LEFT JOIN employees reviewer_emp ON reviewer_emp.user_id = reviewer.id
       LEFT JOIN departments d ON d.id = e.department_id
       WHERE 1=1
     `;
     const params = [];
 
-    if (status && status !== 'all') {
-      query += ` AND lr.status = ?`;
+    if (status && status.toLowerCase() !== 'all') {
+      query += ` AND LOWER(TRIM(lr.status)) = LOWER(TRIM(?))`;
       params.push(status);
     }
 
     query += ` ORDER BY lr.created_at DESC LIMIT 150`;
 
     const [rows] = await pool.query(query, params);
-    return res.json({ success: true, leaves: rows });
+    return res.json({ success: true, leaves: rows, counts });
   } catch (error) {
     console.error('Error fetching leaves for admin:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch leave requests from database.' });
@@ -136,9 +158,14 @@ router.get('/all', authenticateToken, requireRole('admin'), async (req, res) => 
 router.put('/:id/status', authenticateToken, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const { status, reviewNotes } = req.body;
+    const { reviewNotes } = req.body;
+    const rawStatus = req.body.status ? req.body.status.toString().trim() : '';
 
-    if (!['Approved', 'Rejected'].includes(status)) {
+    let status = '';
+    if (/^approved$/i.test(rawStatus)) status = 'Approved';
+    else if (/^rejected$/i.test(rawStatus)) status = 'Rejected';
+    else if (/^pending$/i.test(rawStatus)) status = 'Pending';
+    else {
       return res.status(400).json({ success: false, message: "Status must be 'Approved' or 'Rejected'." });
     }
 

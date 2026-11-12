@@ -17,6 +17,12 @@ const {
   getScheduledOfficeHours,
   getWorkingDaysInMonth
 } = require('../utils/time');
+const {
+  resolveDateRange,
+  compileAttendanceData,
+  generateExcelBuffer,
+  generatePdfBuffer
+} = require('../utils/attendanceExporter');
 
 /**
  * GET /api/attendance/today
@@ -1296,6 +1302,145 @@ router.post('/manual-adjustment', authenticateToken, requireRole('admin'), async
   } catch (error) {
     console.error('Error in manual adjustment:', error);
     return res.status(500).json({ success: false, message: 'Manual adjustment failed.' });
+  }
+});
+
+/**
+ * GET /api/attendance/export/admin
+ * Export attendance records for individual employee or all employees
+ * Supported formats: 'excel' (.xlsx), 'pdf' (.pdf)
+ * Date filters: 'this_month', 'previous_month', 'custom'
+ * Security: Strictly requires admin role
+ */
+router.get('/export/admin', authenticateToken, requireRole('admin'), async (req, res) => {
+  try {
+    const { format = 'excel', filterType = 'this_month', startDate, endDate, employeeId } = req.query;
+
+    const data = await compileAttendanceData({
+      employeeId: employeeId && employeeId !== 'all' ? employeeId : null,
+      filterType,
+      startDate,
+      endDate
+    });
+
+    const isPdf = String(format).toLowerCase() === 'pdf';
+    const isSingle = data.isSingleEmployee;
+    const empSlug = isSingle && data.singleEmployee
+      ? `${data.singleEmployee.emp_code}_${data.singleEmployee.full_name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+      : 'All_Staff';
+    const filename = `SheWings_Attendance_${empSlug}_${data.dateRange.startDate}_to_${data.dateRange.endDate}.${isPdf ? 'pdf' : 'xlsx'}`;
+
+    if (isPdf) {
+      const pdfBuffer = await generatePdfBuffer(data);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.send(pdfBuffer);
+    } else {
+      const excelBuffer = await generateExcelBuffer(data);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', excelBuffer.length);
+      return res.send(excelBuffer);
+    }
+  } catch (error) {
+    console.error('Admin attendance export error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to export attendance records.' });
+  }
+});
+
+/**
+ * GET /api/attendance/export/my
+ * Export logged-in employee's own attendance records
+ * Supported formats: 'excel' (.xlsx), 'pdf' (.pdf)
+ * Date filters: 'this_month', 'previous_month', 'custom'
+ * Security: Strictly scoped to req.user.employeeTableId (Zero Trust for client-provided ID)
+ */
+router.get('/export/my', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = req.user.employeeTableId;
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: 'No employee record associated with this account.' });
+    }
+
+    const { format = 'excel', filterType = 'this_month', startDate, endDate } = req.query;
+
+    // Strict self-service isolation: Pass req.user.employeeTableId directly
+    const data = await compileAttendanceData({
+      employeeId,
+      filterType,
+      startDate,
+      endDate
+    });
+
+    const isPdf = String(format).toLowerCase() === 'pdf';
+    const empSlug = data.singleEmployee
+      ? `${data.singleEmployee.emp_code}_${data.singleEmployee.full_name.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+      : `Staff_${employeeId}`;
+    const filename = `SheWings_My_Attendance_${empSlug}_${data.dateRange.startDate}_to_${data.dateRange.endDate}.${isPdf ? 'pdf' : 'xlsx'}`;
+
+    if (isPdf) {
+      const pdfBuffer = await generatePdfBuffer(data);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      return res.send(pdfBuffer);
+    } else {
+      const excelBuffer = await generateExcelBuffer(data);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', excelBuffer.length);
+      return res.send(excelBuffer);
+    }
+  } catch (error) {
+    console.error('Employee attendance export error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to export your attendance records.' });
+  }
+});
+
+/**
+ * GET /api/attendance/my-history
+ * Comprehensive daily attendance history for the logged-in employee
+ * Returns complete daily records including Present, Absent, Late, WFH, Camp, On Leave, Weekly Off
+ * Filter options: 'this_month', 'previous_month', 'custom' (startDate, endDate)
+ * Security: Strictly uses req.user.employeeTableId
+ */
+router.get('/my-history', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = req.user.employeeTableId;
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: 'No employee record associated with this account.' });
+    }
+
+    const { filterType = 'this_month', startDate, endDate } = req.query;
+
+    const data = await compileAttendanceData({
+      employeeId,
+      filterType,
+      startDate,
+      endDate
+    });
+
+    const todayStr = getKolkataDateString();
+
+    // For attendance history: elapsed days up to today (or all days if past/custom range)
+    let historyRecords = data.records.filter(r => r.date <= todayStr);
+    if (historyRecords.length === 0) {
+      historyRecords = data.records;
+    }
+
+    // Always sort latest dates first (descending date order)
+    historyRecords.sort((a, b) => b.date.localeCompare(a.date));
+
+    return res.json({
+      success: true,
+      dateRange: data.dateRange,
+      summary: data.singleEmployee,
+      records: historyRecords
+    });
+  } catch (error) {
+    console.error('Error fetching employee attendance history:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to fetch attendance history.' });
   }
 });
 

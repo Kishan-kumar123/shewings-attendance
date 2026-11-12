@@ -159,6 +159,17 @@ html.light .bg-slate-950\/60,
   background-color: #ffffff !important;
 }
 
+/* Ensure dark slate gradients reset cleanly to crisp white surfaces in Light Mode */
+html.light [class*="bg-gradient-"][class*="from-slate-900"],
+html.light [class*="bg-gradient-"][class*="from-slate-950"],
+html.light .bg-gradient-to-br.from-slate-900\/90,
+[data-theme="light"] [class*="bg-gradient-"][class*="from-slate-900"],
+[data-theme="light"] [class*="bg-gradient-"][class*="from-slate-950"],
+[data-theme="light"] .bg-gradient-to-br.from-slate-900\/90 {
+  background-image: none !important;
+  background-color: #ffffff !important;
+}
+
 /* Crisp light mode elevation for cards */
 html.light .rounded-2xl.border,
 html.light .rounded-3xl.border,

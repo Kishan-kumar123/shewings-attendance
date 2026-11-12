@@ -8,16 +8,18 @@
     "dev": "node --watch server.js",
     "init-db": "node database/init-db.js",
     "setup-admin": "node database/setup-admin.js",
-    "test": "node tests/verify-rules.js && node tests/verify-modes.js && node tests/verify-admin-password.js"
+    "test": "node tests/verify-rules.js && node tests/verify-modes.js && node tests/verify-attendance-downloads.js && node tests/verify-edit-staff-email.js && node tests/verify-wfh-integration.js && node tests/verify-notification-counts.js && node tests/verify-approved-display.js && node tests/verify-all-employees-approved-wfh.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "mysql2": "^3.12.0"
+    "mysql2": "^3.12.0",
+    "pdfkit": "^0.20.2"
   }
 }

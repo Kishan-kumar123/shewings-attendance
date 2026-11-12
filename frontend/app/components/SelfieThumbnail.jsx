@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Camera, User, ExternalLink } from 'lucide-react';
 import { BACKEND_URL } from '../lib/api';
 
@@ -12,6 +12,10 @@ export default function SelfieThumbnail({
   onClick = null
 }) {
   const [hasError, setHasError] = useState(!src);
+
+  useEffect(() => {
+    setHasError(!src);
+  }, [src]);
 
   const fullUrl = src
     ? (src.startsWith('http') ? src : `${BACKEND_URL}${src}`)
